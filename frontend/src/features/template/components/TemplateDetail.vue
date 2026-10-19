@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Inbox, Pencil, Trash2 } from 'lucide-vue-next'
+import { useRouter } from 'vue-router'
+import { Inbox, Pencil, Play, Trash2 } from 'lucide-vue-next'
 import { NButton, NTooltip } from 'naive-ui'
 import CodeView from '@/shared/components/CodeView.vue'
 import MarkdownView from '@/shared/components/MarkdownView.vue'
+import { splitTemplateId, visualVersionToken, visualViewerPath } from '@/features/template/model/visual'
 import type { LangId } from '@/shared/types'
 import type { TemplateDetail, TemplateVariant } from '@/features/template/types'
 
@@ -18,6 +20,22 @@ const emit = defineEmits<{
   'edit-version': []
   'delete-version': []
 }>()
+
+const router = useRouter()
+
+const currentVariant = computed(
+  () => props.variant ?? props.detail.variants[0] ?? null,
+)
+
+const canOpenVisual = computed(() => currentVariant.value?.has_visual === true)
+
+function openVisual(): void {
+  const variant = currentVariant.value
+  if (!variant) return
+  const { category, name } = splitTemplateId(props.detail.id)
+  const token = visualVersionToken(props.detail.id, variant)
+  void router.push(visualViewerPath(category, name, token))
+}
 
 const code = computed(() => props.variant?.code ?? props.detail.variants[0]?.code ?? '')
 const file = computed(() => props.variant?.file ?? props.detail.file ?? 'code')
@@ -53,6 +71,14 @@ const desc = computed(() => props.variant?.body ?? props.detail.desc)
     </div>
     <template v-else>
     <div class="detail-actions">
+      <n-tooltip v-if="canOpenVisual">
+        <template #trigger>
+          <n-button quaternary size="small" @click="openVisual">
+            <template #icon><Play :size="14" /></template>
+          </n-button>
+        </template>
+        可视化
+      </n-tooltip>
       <n-tooltip>
         <template #trigger>
           <n-button quaternary size="small" @click="emit('edit-version')">
