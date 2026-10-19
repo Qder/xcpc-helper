@@ -33,6 +33,7 @@ CREATE TABLE templates (
     file TEXT,
     body TEXT NOT NULL,
     variant_count INTEGER NOT NULL,
+    has_visual INTEGER NOT NULL,
     search_text TEXT NOT NULL
 )
 """
@@ -52,7 +53,8 @@ CREATE TABLE versions (
     source TEXT,
     page TEXT,
     priority INTEGER NOT NULL,
-    updated TEXT
+    updated TEXT,
+    has_visual INTEGER NOT NULL
 )
 """
 
@@ -105,6 +107,7 @@ def _template_row(template: TemplateNode) -> tuple:
         primary.file if primary else None,
         primary.body if primary else "",
         len(template.versions),
+        int(any(v.has_visual for v in template.versions)),
         search_text,
     )
 
@@ -121,7 +124,7 @@ def rebuild_index(db_path: Path, scan: ScanResult) -> None:
 
         for template in scan.templates:
             conn.execute(
-                "INSERT INTO templates VALUES (" + ",".join("?" * 13) + ")",
+                "INSERT INTO templates VALUES (" + ",".join("?" * 14) + ")",
                 _template_row(template),
             )
             for order, version in enumerate(template.versions):
@@ -129,7 +132,7 @@ def rebuild_index(db_path: Path, scan: ScanResult) -> None:
                     f"{template.id}/{version.slug}" if version.slug else template.id
                 )
                 conn.execute(
-                    "INSERT INTO versions VALUES (" + ",".join("?" * 14) + ")",
+                    "INSERT INTO versions VALUES (" + ",".join("?" * 15) + ")",
                     (
                         version_id,
                         template.id,
@@ -145,6 +148,7 @@ def rebuild_index(db_path: Path, scan: ScanResult) -> None:
                         version.meta.page,
                         version.meta.priority,
                         version.meta.updated.isoformat() if version.meta.updated else None,
+                        int(version.has_visual),
                     ),
                 )
             all_tags = " ".join(

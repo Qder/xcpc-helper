@@ -112,6 +112,25 @@ def test_categories(service: TemplateService) -> None:
     assert cats["ds"] == 1
 
 
+def test_list_and_detail_has_visual(tmp_path: Path, content_dir: Path) -> None:
+    (content_dir / "math" / "sieve" / "visual.html").write_text("<p></p>", encoding="utf-8")
+    (content_dir / "ds" / "dsu" / "path-compression" / "visual.html").write_text(
+        "<p></p>", encoding="utf-8"
+    )
+    settings = Settings(content_dir=content_dir, data_dir=tmp_path / "data")
+    svc = TemplateService(settings)
+    svc.rebuild()
+    only = svc.list_templates(has_visual=True)
+    assert {t.id for t in only} == {"math/sieve", "ds/dsu"}
+    assert all(t.has_visual for t in only)
+    all_items = svc.list_templates()
+    assert any(not t.has_visual for t in all_items)
+    detail = svc.get_detail("ds/dsu")
+    assert detail.has_visual is True
+    assert detail.variants[0].has_visual is True
+    assert detail.variants[1].has_visual is False
+
+
 def test_api_templates(client: TestClient) -> None:
     resp = client.get("/api/templates")
     assert resp.status_code == 200
@@ -123,6 +142,26 @@ def test_api_templates_query(client: TestClient) -> None:
     resp = client.get("/api/templates", params={"keyword": "素数", "category": "math"})
     assert resp.status_code == 200
     assert [t["id"] for t in resp.json()] == ["math/sieve"]
+
+
+def test_api_has_visual_filter(tmp_path: Path, content_dir: Path) -> None:
+    (content_dir / "math" / "sieve" / "visual.html").write_text("<p></p>", encoding="utf-8")
+    settings = Settings(content_dir=content_dir, data_dir=tmp_path / "data")
+    svc = TemplateService(settings)
+    svc.rebuild()
+    app = create_app()
+    app.dependency_overrides[get_template_service] = lambda: svc
+    client = TestClient(app)
+    resp = client.get("/api/templates", params={"has_visual": True})
+    assert resp.status_code == 200
+    ids = {t["id"] for t in resp.json()}
+    assert ids == {"math/sieve"}
+    assert all(t["has_visual"] is True for t in resp.json())
+    detail = client.get("/api/templates/math/sieve").json()
+    assert detail["has_visual"] is True
+    assert detail["variants"][0]["has_visual"] is True
+    empty = client.get("/api/templates/misc/empty-tpl").json()
+    assert empty["has_visual"] is False
 
 
 def test_api_detail_and_404(client: TestClient) -> None:

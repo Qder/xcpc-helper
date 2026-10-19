@@ -36,6 +36,7 @@ class VersionNode(BaseModel):
     code: str
     meta: ReadmeMeta
     body: str  # README 正文（front matter 之后的 Markdown）
+    has_visual: bool = False  # 版本目录是否存在 visual.html（大小写不敏感）
 
 
 class TemplateNode(BaseModel):

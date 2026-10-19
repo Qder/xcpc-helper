@@ -57,6 +57,7 @@ class TemplateService:
         tags: list[str] | None = None,
         keyword: str | None = None,
         sort: SortMode = "priority",
+        has_visual: bool | None = None,
     ) -> list[TemplateSummary]:
         db = self._settings.db_path
         scores: dict[str, float] | None = None
@@ -70,6 +71,8 @@ class TemplateService:
                 continue
             row_tags: list[str] = json.loads(row["tags"])
             if tags and not all(tag in row_tags for tag in tags):
+                continue
+            if has_visual is True and not bool(row["has_visual"]):
                 continue
             summaries.append(_row_to_summary(row))
 
@@ -99,6 +102,7 @@ class TemplateService:
                     datetime.date.fromisoformat(v["updated"]) if v["updated"] else None
                 ),
                 priority=v["priority"],
+                has_visual=bool(v["has_visual"]),
             )
             for v in repository.get_versions(db, template_id)
         ]
@@ -229,6 +233,7 @@ def _row_to_summary(row: sqlite3.Row) -> TemplateSummary:
         updated=updated,
         priority=row["priority"],
         variant_count=row["variant_count"],
+        has_visual=bool(row["has_visual"]),
     )
 
 

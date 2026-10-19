@@ -28,6 +28,7 @@ class TemplateSummary(BaseModel):
     updated: datetime.date | None
     priority: int
     variant_count: int
+    has_visual: bool = False  # 至少一个版本存在 visual.html
 
 
 class TemplateVersion(BaseModel):
@@ -44,6 +45,7 @@ class TemplateVersion(BaseModel):
     page: str | None
     updated: datetime.date | None
     priority: int
+    has_visual: bool = False
 
 
 class TemplateDetail(TemplateSummary):

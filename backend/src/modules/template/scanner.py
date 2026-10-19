@@ -23,6 +23,8 @@ from modules.template.parser import parse_readme_file
 
 logger = logging.getLogger("xcpc.scanner")
 
+VISUAL_FILENAME = "visual.html"
+
 CODE_EXTENSIONS: dict[str, str] = {
     ".cpp": "cpp",
     ".cc": "cpp",
@@ -45,6 +47,18 @@ def _list_dirs(path: Path) -> list[Path]:
 def _find_readme(path: Path) -> Path | None:
     for p in path.iterdir():
         if p.is_file() and p.name.lower() == "readme.md":
+            return p
+    return None
+
+
+def find_visual_file(path: Path) -> Path | None:
+    """版本目录下的 visual.html（大小写不敏感）；不存在返回 None。"""
+    try:
+        entries = list(path.iterdir())
+    except OSError:
+        return None
+    for p in entries:
+        if p.is_file() and p.name.lower() == VISUAL_FILENAME:
             return p
     return None
 
@@ -114,6 +128,7 @@ def _scan_version(
         code=code,
         meta=meta,
         body=body,
+        has_visual=find_visual_file(version_dir) is not None,
     )
 
 

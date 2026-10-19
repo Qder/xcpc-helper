@@ -69,6 +69,33 @@ def test_diagnostics_collected(content_dir: Path) -> None:
     assert any("updated" in m for m in messages)  # tarjan 的坏日期
 
 
+def test_has_visual_absent_by_default(content_dir: Path) -> None:
+    result = scan_content(content_dir)
+    assert all(not v.has_visual for t in result.templates for v in t.versions)
+
+
+def test_has_visual_top_level_subdir_chinese_and_casefold(content_dir: Path) -> None:
+    """visual.html 大小写不敏感；顶层 / 子目录 / 中文路径均识别；不产生诊断。"""
+    before = {d.message for d in scan_content(content_dir).diagnostics}
+    (content_dir / "math" / "sieve" / "visual.html").write_text("<html></html>", encoding="utf-8")
+    (content_dir / "ds" / "dsu" / "path-compression" / "VISUAL.HTML").write_text(
+        "<html></html>", encoding="utf-8"
+    )
+    (content_dir / "字符串" / "哈希" / "Visual.HTML").write_text("<html></html>", encoding="utf-8")
+    result = scan_content(content_dir)
+    sieve = next(t for t in result.templates if t.id == "math/sieve")
+    assert sieve.versions[0].has_visual
+    dsu = next(t for t in result.templates if t.id == "ds/dsu")
+    by_slug = {v.slug: v.has_visual for v in dsu.versions}
+    assert by_slug["path-compression"] is True
+    assert by_slug["with-weight"] is False
+    hashed = next(t for t in result.templates if t.id == "字符串/哈希")
+    assert hashed.versions[0].has_visual
+    after = {d.message for d in result.diagnostics}
+    assert after == before
+    assert not any("html" in d.message.lower() for d in result.diagnostics)
+
+
 def test_missing_content_dir(tmp_path: Path) -> None:
     result = scan_content(tmp_path / "not-exist")
     assert result.templates == []

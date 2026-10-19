@@ -61,6 +61,28 @@ def test_category_filter_and_counts(db_path: Path) -> None:
     assert counts["字符串"] == 1
 
 
+def test_has_visual_indexed(tmp_path: Path, content_dir: Path) -> None:
+    (content_dir / "math" / "sieve" / "visual.html").write_text("<p></p>", encoding="utf-8")
+    (content_dir / "ds" / "dsu" / "with-weight" / "visual.html").write_text(
+        "<p></p>", encoding="utf-8"
+    )
+    path = tmp_path / "data" / "visual.db"
+    repository.rebuild_index(path, scan_content(content_dir))
+    sieve = repository.get_template(path, "math/sieve")
+    assert sieve is not None
+    assert sieve["has_visual"] == 1
+    empty = repository.get_template(path, "misc/empty-tpl")
+    assert empty is not None
+    assert empty["has_visual"] == 0
+    versions = repository.get_versions(path, "ds/dsu")
+    by_slug = {v["slug"]: v["has_visual"] for v in versions}
+    assert by_slug["path-compression"] == 0
+    assert by_slug["with-weight"] == 1
+    dsu = repository.get_template(path, "ds/dsu")
+    assert dsu is not None
+    assert dsu["has_visual"] == 1
+
+
 def test_search_chinese_long_term_via_fts(db_path: Path) -> None:
     scores = repository.search_scores(db_path, "线性筛")
     assert "math/sieve" in scores
