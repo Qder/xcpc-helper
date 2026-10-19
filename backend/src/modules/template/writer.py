@@ -21,7 +21,7 @@ import yaml
 from common.validation import FORBIDDEN_CHARS, RESERVED_NAMES, validate_name
 from core.exceptions import BadRequestError, ConflictError, NotFoundError
 from modules.template.models import DEFAULT_PRIORITY
-from modules.template.scanner import CODE_EXTENSIONS
+from modules.template.scanner import CODE_EXTENSIONS, find_visual_file
 from modules.template.schemas import VersionMetaInput, VersionUpsert
 
 # 名称校验规则已提升至 common.validation（打印册功能共用）
@@ -304,7 +304,7 @@ def update_version_dir(
 def delete_version_dir(
     content_dir: Path, category: str, name: str, current_slug: str, current_file: str
 ) -> None:
-    """删除一个版本：副标签版本整目录删除；顶层版本只删代码与 README。"""
+    """删除一个版本：副标签版本整目录删除；顶层版本只删代码、README 与 visual.html。"""
     template_dir = content_dir / category / name
     if not template_dir.is_dir():
         raise NotFoundError(f"模板不存在: {category}/{name}")
@@ -314,10 +314,13 @@ def delete_version_dir(
             raise NotFoundError(f"版本不存在: {category}/{name}/{current_slug}")
         shutil.rmtree(version_dir)
         return
-    # 顶层单版本：删除代码文件与 README，模板目录留空（成为空主标签）
+    # 顶层单版本：删除代码、README 与 visual.html，模板目录留空（成为空主标签）
     code_file = template_dir / current_file
     if code_file.is_file():
         code_file.unlink()
     readme = _find_readme(template_dir)
     if readme is not None:
         readme.unlink()
+    visual = find_visual_file(template_dir)
+    if visual is not None:
+        visual.unlink()

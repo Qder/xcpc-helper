@@ -230,7 +230,8 @@ def test_delete_version_dir(content_dir: Path) -> None:
     # 副标签版本：整目录删除
     writer.delete_version_dir(content_dir, "ds", "dsu", "with-weight", "dsu_weight.cpp")
     assert not (content_dir / "ds" / "dsu" / "with-weight").exists()
-    # 顶层单版本：只删代码与 README，目录留空成为空主标签
+    # 顶层单版本：删代码、README 与 visual.html，目录留空成为空主标签
+    (content_dir / "math" / "sieve" / "VISUAL.HTML").write_text("<p></p>", encoding="utf-8")
     writer.delete_version_dir(content_dir, "math", "sieve", "", "euler_sieve.cpp")
     template_dir = content_dir / "math" / "sieve"
     assert template_dir.is_dir()
