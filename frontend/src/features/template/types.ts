@@ -27,6 +27,8 @@ export interface TemplateSummary {
   updated: string | null
   priority: number
   variant_count: number
+  /** 至少一个版本存在 visual.html */
+  has_visual: boolean
 }
 
 /** 详情页中的一个版本（副标签），body 为该版本 README 正文 */
@@ -42,6 +44,7 @@ export interface TemplateVariant {
   page: string | null
   updated: string | null
   priority: number
+  has_visual: boolean
 }
 
 /** 详情：与后端 TemplateDetail 对应 */

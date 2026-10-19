@@ -20,6 +20,8 @@ export interface TemplateQuery {
   category?: string
   keyword?: string
   sort?: SortMode
+  /** true 时只返回至少一个版本有可视化的模板 */
+  hasVisual?: boolean
 }
 
 export function fetchTemplates(query: TemplateQuery = {}): Promise<TemplateSummary[]> {
@@ -27,6 +29,7 @@ export function fetchTemplates(query: TemplateQuery = {}): Promise<TemplateSumma
   if (query.category && query.category !== 'all') params.set('category', query.category)
   if (query.keyword?.trim()) params.set('keyword', query.keyword.trim())
   if (query.sort) params.set('sort', query.sort)
+  if (query.hasVisual === true) params.set('has_visual', 'true')
   const qs = params.toString()
   return request<TemplateSummary[]>(`/templates${qs ? `?${qs}` : ''}`)
 }
