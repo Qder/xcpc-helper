@@ -40,7 +40,7 @@ function toggleGroup(id: string): void {
   if (
     openGroups.value[id] &&
     group.children &&
-    !group.children.some((c) => c.to === activePath.value)
+    !group.children.some((c) => activePath.value === c.to || activePath.value.startsWith(`${c.to}/`))
   ) {
     navigate(group.children[0].to)
   }
@@ -51,7 +51,9 @@ watch(
   activePath,
   (path) => {
     const group = NAV_GROUPS.find(
-      (g) => g.to === path || g.children?.some((c) => c.to === path),
+      (g) =>
+        (g.to !== undefined && (path === g.to || path.startsWith(`${g.to}/`))) ||
+        g.children?.some((c) => path === c.to || path.startsWith(`${c.to}/`)),
     )
     if (group) openGroups.value[group.id] = true
   },

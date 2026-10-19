@@ -22,9 +22,13 @@ const iconMap = {
 /** 从 package.json 动态读取版本号 */
 const appVersion = `v${__APP_VERSION__}`
 
+function pathMatches(to: string, path: string): boolean {
+  return path === to || path.startsWith(`${to}/`)
+}
+
 function isGroupActive(group: NavGroup): boolean {
-  if (group.to === props.activePath) return true
-  return group.children?.some((child) => child.to === props.activePath) ?? false
+  if (group.to && pathMatches(group.to, props.activePath)) return true
+  return group.children?.some((child) => pathMatches(child.to, props.activePath)) ?? false
 }
 
 function onGroupClick(group: NavGroup): void {
@@ -64,7 +68,7 @@ function onGroupClick(group: NavGroup): void {
             :key="child.id"
             type="button"
             class="nav-sub-item"
-            :class="{ active: activePath === child.to }"
+            :class="{ active: pathMatches(child.to, activePath) }"
             @click="emit('navigate', child.to)"
           >
             <span class="sub-dot"></span>

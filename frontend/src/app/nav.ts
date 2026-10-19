@@ -30,6 +30,7 @@ export const NAV_GROUPS: NavGroup[] = [
     children: [
       { id: 'tpl-lib', label: '模板库', to: '/template/library' },
       { id: 'tpl-books', label: '打印册', to: '/template/printbook' },
+      { id: 'tpl-visual', label: '算法可视化', to: '/template/visual' },
     ],
   },
   {

@@ -29,6 +29,16 @@ export const router = createRouter({
       meta: { group: '模板整理', sub: '打印册' },
     },
     {
+      path: '/template/visual',
+      component: () => import('@/features/template/VisualGalleryPage.vue'),
+      meta: { group: '模板整理', sub: '算法可视化' },
+    },
+    {
+      path: '/template/visual/:category/:name',
+      component: () => import('@/features/template/VisualViewerPage.vue'),
+      meta: { group: '模板整理', sub: '算法可视化' },
+    },
+    {
       path: '/activity/overview',
       component: () => import('@/features/activity/ActivityPage.vue'),
       meta: { group: '训练统计', sub: '数据总览' },
