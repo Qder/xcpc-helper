@@ -17,7 +17,8 @@ content/
 ├── graph/                    # 分类
 │   ├── segtree/              # 主标签名称，该目录仅包含一个版本的模板（前端无副标签）
 │   │   ├── segtree_lazy.cpp
-│   │   └── README.md
+│   │   ├── README.md
+│   │   └── visual.html           # 可选；该版本的算法演示（见 visualizer.md）
 │   ├── dsu/                  # 包含多个版本的模板
 │   │   ├── path-compression/ # 副标签
 │   │   │   ├── dsu.cpp
@@ -40,7 +41,7 @@ content/
 
 ## 3. 版本内容与元数据
 
-每个版本包含一份代码文件与一份 `README.md`。README 采用 YAML front matter：
+每个版本包含一份代码文件与一份 `README.md`，可选再放一份自包含的 `visual.html`（大小写不敏感，不写入 front matter，扫描器不把它当代码、也不产生诊断）。README 采用 YAML front matter：
 
 ```plaintext
 ---
@@ -73,7 +74,7 @@ priority: 5
 2. **可视化增删改**（已实现）：模板库页面提供全部交互入口——
    - 工具栏"新增模板"按钮创建空主标签（仅分类 + 模板名，分类可新）；
    - 所有主标签均可展开，展开区末尾的 + 胶囊新建版本（名称/元数据/代码/说明）；
-   - 详情页右上角编辑、删除当前版本；代码与说明均支持上传本地文件或手动输入；
+   - 详情页右上角编辑、删除当前版本；当前版本有 `visual.html` 时显示「可视化」入口，跳到算法可视化演示页；代码与说明均支持上传本地文件或手动输入；
    - 删光所有版本后，空页面提供"删除模板"按钮移除整个主标签。
 
 **空主标签**：完全为空的模板目录是合法状态（可视化新建的占位模板），
@@ -94,8 +95,9 @@ priority: 5
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/api/templates` | 模板列表（摘要），支持 `category` / `tags` / `keyword`（FTS5 搜标题/标签/说明/代码，结果按相关度排序，用户所选 `sort` 作同分决胜）/ `sort`（updated/name/priority） |
-| GET | `/api/templates/{id}` | 模板详情，含全部副标签版本（代码 + README 正文） |
+| GET | `/api/templates` | 模板列表（摘要），支持 `category` / `tags` / `keyword`（FTS5 搜标题/标签/说明/代码，结果按相关度排序，用户所选 `sort` 作同分决胜）/ `sort`（updated/name/priority）/ `has_visual=true`（只返回至少一个版本有 visual.html 的模板）；摘要含 `has_visual` |
+| GET | `/api/templates/{id}` | 模板详情，含全部副标签版本（代码 + README 正文）；每个 variant 含 `has_visual` |
+| GET | `/api/templates/{category}/{name}/versions/{version}/visual` | 返回该版本 `visual.html`（`~` 表示顶层单版本）；无文件 404；超过 `visual_max_bytes` 413；带沙箱 CSP，详见 [visualizer.md](visualizer.md) |
 | GET | `/api/categories` | 分类列表（从 content/ 一级目录自动派生） |
 | GET | `/api/diagnostics` | 扫描诊断（格式错误、缺代码文件、page 无 source 等），供前端显示报错提示 |
 | POST | `/api/templates/reload` | 手动重建索引（watcher 之外的兜底） |

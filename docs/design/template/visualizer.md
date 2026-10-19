@@ -1,6 +1,6 @@
 # 算法可视化（template / visualizer）设计
 
-> 状态：设计中。一期实现。需求优先级归属见 [../../requirements.md](../../requirements.md)；
+> 状态：已实现。一期实现。需求优先级归属见 [../../requirements.md](../../requirements.md)；
 > 跨功能公共约定见 [../conventions.md](../conventions.md)；模板库本体见 [template-library.md](template-library.md)。
 > 演示页骨架见 [visual-skeleton.html](visual-skeleton.html)。
 
