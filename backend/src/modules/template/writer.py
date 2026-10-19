@@ -19,10 +19,15 @@ from typing import Any
 import yaml
 
 from common.validation import FORBIDDEN_CHARS, RESERVED_NAMES, validate_name
-from core.exceptions import BadRequestError, ConflictError, NotFoundError
+from core.exceptions import (
+    BadRequestError,
+    ConflictError,
+    NotFoundError,
+    PayloadTooLargeError,
+)
 from modules.template.models import DEFAULT_PRIORITY
 from modules.template.scanner import CODE_EXTENSIONS, find_visual_file
-from modules.template.schemas import VersionMetaInput, VersionUpsert
+from modules.template.schemas import ROOT_VERSION_TOKEN, VersionMetaInput, VersionUpsert
 
 # 名称校验规则已提升至 common.validation（打印册功能共用）
 
@@ -182,6 +187,45 @@ def rename_template_dir(
     os.rename(src, dst)
     _cleanup_empty_category(content_dir, category)
     return dst_category, dst_name
+
+
+def resolve_version_dir(
+    content_dir: Path, category: str, name: str, version_token: str
+) -> Path:
+    """把分类/模板/版本解析为 content_dir 内的版本目录，拒绝路径穿越。"""
+    category = validate_name(category, "分类")
+    name = validate_name(name, "模板")
+    root = content_dir.resolve()
+    if version_token == ROOT_VERSION_TOKEN:
+        version_dir = (content_dir / category / name).resolve()
+    else:
+        slug = validate_name(version_token, "副标签")
+        version_dir = (content_dir / category / name / slug).resolve()
+    if not version_dir.is_relative_to(root):
+        raise BadRequestError("可视化路径超出内容目录")
+    return version_dir
+
+
+def read_visual_bytes(
+    content_dir: Path,
+    category: str,
+    name: str,
+    version_token: str,
+    max_bytes: int,
+) -> bytes:
+    """读取版本目录下的 visual.html；不存在 404，超限 413。"""
+    version_dir = resolve_version_dir(content_dir, category, name, version_token)
+    if not version_dir.is_dir():
+        raise NotFoundError(f"版本不存在: {category}/{name}/{version_token}")
+    visual = find_visual_file(version_dir)
+    if visual is None:
+        raise NotFoundError(f"可视化文件不存在: {category}/{name}/{version_token}")
+    size = visual.stat().st_size
+    if size > max_bytes:
+        raise PayloadTooLargeError(
+            f"可视化文件过大（{size} 字节，上限 {max_bytes} 字节）"
+        )
+    return visual.read_bytes()
 
 
 def delete_template_dir(content_dir: Path, category: str, name: str) -> None:

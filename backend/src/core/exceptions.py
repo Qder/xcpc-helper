@@ -43,6 +43,13 @@ class ConflictError(AppError):
     code = "conflict"
 
 
+class PayloadTooLargeError(AppError):
+    """请求或资源超过允许大小（413）。"""
+
+    status_code = status.HTTP_413_CONTENT_TOO_LARGE
+    code = "payload_too_large"
+
+
 class BadGatewayError(AppError):
     """上游平台故障（502）：本地服务正常，但外部平台请求失败。"""
 

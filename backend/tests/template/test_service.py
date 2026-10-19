@@ -186,3 +186,64 @@ def test_api_reload(client: TestClient) -> None:
     resp = client.post("/api/templates/reload")
     assert resp.status_code == 200
     assert resp.json()["templates"] > 0
+
+
+def _visual_client(tmp_path: Path, content_dir: Path) -> TestClient:
+    settings = Settings(content_dir=content_dir, data_dir=tmp_path / "data")
+    svc = TemplateService(settings)
+    svc.rebuild()
+    app = create_app()
+    app.dependency_overrides[get_template_service] = lambda: svc
+    return TestClient(app)
+
+
+def test_api_visual_headers_tilde_and_chinese(tmp_path: Path, content_dir: Path) -> None:
+    html = "<html><body>sieve-demo</body></html>"
+    (content_dir / "math" / "sieve" / "visual.html").write_text(html, encoding="utf-8")
+    (content_dir / "ds" / "dsu" / "path-compression" / "visual.html").write_text(
+        "dsu", encoding="utf-8"
+    )
+    (content_dir / "字符串" / "哈希" / "visual.html").write_text("哈希演示", encoding="utf-8")
+    client = _visual_client(tmp_path, content_dir)
+
+    resp = client.get("/api/templates/math/sieve/versions/~/visual")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/html")
+    assert "charset=utf-8" in resp.headers["content-type"]
+    assert resp.headers["x-content-type-options"] == "nosniff"
+    csp = resp.headers["content-security-policy"]
+    assert "sandbox" in csp
+    assert "connect-src 'none'" in csp
+    assert resp.content.decode("utf-8") == html
+
+    resp = client.get("/api/templates/ds/dsu/versions/path-compression/visual")
+    assert resp.status_code == 200
+    assert resp.content == b"dsu"
+
+    resp = client.get("/api/templates/字符串/哈希/versions/~/visual")
+    assert resp.status_code == 200
+    assert resp.content.decode("utf-8") == "哈希演示"
+
+
+def test_api_visual_404_413_and_bad_name(tmp_path: Path, content_dir: Path) -> None:
+    from core.exceptions import BadRequestError
+
+    client = _visual_client(tmp_path, content_dir)
+    resp = client.get("/api/templates/math/sieve/versions/~/visual")
+    assert resp.status_code == 404
+    resp = client.get("/api/templates/ds/dsu/versions/missing/visual")
+    assert resp.status_code == 404
+
+    (content_dir / "math" / "sieve" / "visual.html").write_bytes(b"x" * (2 * 1024 * 1024 + 1))
+    resp = client.get("/api/templates/math/sieve/versions/~/visual")
+    assert resp.status_code == 413
+    assert resp.json()["error"]["code"] == "payload_too_large"
+
+    settings = Settings(content_dir=content_dir, data_dir=tmp_path / "data2")
+    svc = TemplateService(settings)
+    with pytest.raises(BadRequestError):
+        svc.read_visual("..", "sieve", "~")
+    with pytest.raises(BadRequestError):
+        svc.read_visual("math", "sieve", "..")
+    resp = client.get("/api/templates/CON/sieve/versions/~/visual")
+    assert resp.status_code == 400

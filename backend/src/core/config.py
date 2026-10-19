@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     # analyze 与 apply 之间暂存目录的保留时长（秒）
     transfer_staging_ttl_seconds: int = 3600
 
+    # 算法可视化：单份 visual.html 大小上限（字节）
+    visual_max_bytes: int = 2 * 1024 * 1024
+
     # 前端构建产物目录（存在时由 FastAPI 托管）
     frontend_dist: Path = PROJECT_ROOT / "frontend" / "dist"
 

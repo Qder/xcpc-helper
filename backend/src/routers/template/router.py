@@ -8,6 +8,7 @@ import asyncio
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
+from fastapi.responses import Response
 
 from modules.template.schemas import (
     CategoryInfo,
@@ -26,6 +27,11 @@ from services.template.service import TemplateService, get_template_service
 router = APIRouter(prefix="/api", tags=["template"])
 
 ServiceDep = Annotated[TemplateService, Depends(get_template_service)]
+
+VISUAL_CSP = (
+    "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; "
+    "style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'"
+)
 
 
 @router.get("/templates", response_model=list[TemplateSummary])
@@ -46,6 +52,22 @@ async def list_templates(
         keyword=keyword,
         sort=sort,
         has_visual=has_visual,
+    )
+
+
+@router.get("/templates/{category}/{name}/versions/{version}/visual")
+async def get_visual(
+    category: str, name: str, version: str, service: ServiceDep
+) -> Response:
+    """GET .../versions/{version}/visual：托管 visual.html（"~" 表示顶层单版本）。"""
+    data = await asyncio.to_thread(service.read_visual, category, name, version)
+    return Response(
+        content=data,
+        media_type="text/html; charset=utf-8",
+        headers={
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": VISUAL_CSP,
+        },
     )
 
 

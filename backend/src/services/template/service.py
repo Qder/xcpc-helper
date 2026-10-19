@@ -142,6 +142,16 @@ class TemplateService:
         label = slug or ROOT_VERSION_TOKEN
         raise NotFoundError(f"版本不存在: {node.id}/{label}")
 
+    def read_visual(self, category: str, name: str, version_token: str) -> bytes:
+        """读取某版本 visual.html（路径校验与大小限制在 writer 层）。"""
+        return writer.read_visual_bytes(
+            self._settings.content_dir,
+            category,
+            name,
+            version_token,
+            self._settings.visual_max_bytes,
+        )
+
     def create_template(self, payload: TemplateCreate) -> TemplateDetail:
         """新建空主标签目录并重建索引，返回新建模板的详情。"""
         with self._lock:
