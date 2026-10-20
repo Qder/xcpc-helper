@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { FileUp, Play, Search } from 'lucide-vue-next'
+import { CircleHelp, FileUp, Play, Search } from 'lucide-vue-next'
 import { NAlert, NButton, NEmpty, NInput, NSelect, NSpin } from 'naive-ui'
+import VisualHelpModal from '@/features/template/components/VisualHelpModal.vue'
 import VisualImportModal from '@/features/template/components/VisualImportModal.vue'
 import { fetchCategories, fetchTemplates, type ApiCategory } from '@/features/template/api'
 import { filterVisualSummaries, splitTemplateId, visualViewerPath } from '@/features/template/model/visual'
@@ -16,6 +17,7 @@ const errorText = ref<string | null>(null)
 const items = ref<TemplateSummary[]>([])
 const cats = ref<ApiCategory[]>([])
 const showImport = ref(false)
+const showHelp = ref(false)
 
 const categoryOptions = computed(() => [
   { label: '全部分类', value: 'all' },
@@ -70,6 +72,10 @@ onMounted(() => {
           <template #icon><FileUp :size="14" /></template>
           导入可视化
         </n-button>
+        <n-button size="small" quaternary @click="showHelp = true">
+          <template #icon><CircleHelp :size="14" /></template>
+          使用说明
+        </n-button>
       </div>
     </div>
     <n-spin :show="loading">
@@ -80,7 +86,7 @@ onMounted(() => {
       >
         <template #extra>
           <p class="vis-empty-hint">
-            骨架文件：docs/design/template/visual-skeleton.html（与代码、README.md 并排放在版本目录下）
+            也可点右上角「导入可视化」粘贴 HTML。骨架：docs/design/template/visual-skeleton.html
           </p>
         </template>
       </n-empty>
@@ -104,6 +110,7 @@ onMounted(() => {
       </div>
     </n-spin>
     <VisualImportModal v-model:show="showImport" @imported="onImported" />
+    <VisualHelpModal v-model:show="showHelp" />
   </div>
 </template>
 
