@@ -104,6 +104,13 @@ export function deleteVersion(templateId: string, token: string): Promise<void> 
   )
 }
 
+function visualBase(category: string, name: string, versionToken: string): string {
+  return (
+    `/templates/${encodeURIComponent(category)}/${encodeURIComponent(name)}` +
+    `/versions/${encodeURIComponent(versionToken)}/visual`
+  )
+}
+
 /** 写入某版本 visual.html；顶层单版本 token 为 ~ */
 export function putVisual(
   category: string,
@@ -111,13 +118,59 @@ export function putVisual(
   versionToken: string,
   html: string,
 ): Promise<void> {
-  return request<void>(
-    `/templates/${encodeURIComponent(category)}/${encodeURIComponent(name)}` +
-      `/versions/${encodeURIComponent(versionToken)}/visual`,
-    {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ html }),
-    },
+  return request<void>(visualBase(category, name, versionToken), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ html }),
+  })
+}
+
+export interface VisualHistoryItem {
+  id: string
+  bytes: number
+  saved_at: string
+}
+
+export function fetchVisualHistory(
+  category: string,
+  name: string,
+  versionToken: string,
+): Promise<{ items: VisualHistoryItem[] }> {
+  return request<{ items: VisualHistoryItem[] }>(
+    `${visualBase(category, name, versionToken)}/history`,
   )
+}
+
+export function restoreVisualHistory(
+  category: string,
+  name: string,
+  versionToken: string,
+  snapshotId: string,
+): Promise<void> {
+  return request<void>(
+    `${visualBase(category, name, versionToken)}/history/${encodeURIComponent(snapshotId)}/restore`,
+    { method: 'POST' },
+  )
+}
+
+export function deleteVisualHistoryItem(
+  category: string,
+  name: string,
+  versionToken: string,
+  snapshotId: string,
+): Promise<void> {
+  return request<void>(
+    `${visualBase(category, name, versionToken)}/history/${encodeURIComponent(snapshotId)}`,
+    { method: 'DELETE' },
+  )
+}
+
+export function clearVisualHistory(
+  category: string,
+  name: string,
+  versionToken: string,
+): Promise<void> {
+  return request<void>(`${visualBase(category, name, versionToken)}/history`, {
+    method: 'DELETE',
+  })
 }

@@ -195,7 +195,7 @@ async function submit(): Promise<void> {
         </div>
       </n-form-item>
       <n-alert v-if="confirmOverwrite" type="warning" :bordered="false">
-        该版本已有 visual.html，再次点击将覆盖，无法找回。
+        该版本已有 visual.html，再次点击将覆盖；覆盖前会留一份历史。
       </n-alert>
       <div class="modal-actions">
         <n-button @click="emit('update:show', false)">取消</n-button>

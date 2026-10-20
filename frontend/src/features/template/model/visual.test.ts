@@ -3,9 +3,13 @@ import { ROOT_VERSION_TOKEN, type TemplateSummary, type TemplateVariant } from '
 import {
   buildThemeMessage,
   filterVisualSummaries,
+  formatHistorySavedAt,
+  parseHistoryQuery,
   parseVersionQuery,
   splitTemplateId,
   visualApiPath,
+  visualHistoryApiPath,
+  visualHistoryIframeSrc,
   visualIframeSrc,
   visualVariants,
   visualVersionToken,
@@ -81,6 +85,28 @@ describe('visualViewerPath', () => {
     expect(visualViewerPath('ds', 'dsu', '带权')).toBe(
       `/template/visual/ds/dsu?version=${encodeURIComponent('带权')}`,
     )
+  })
+  it('历史快照写入 history query', () => {
+    expect(visualViewerPath('math', 'sieve', null, '20261020-040112Z')).toBe(
+      '/template/visual/math/sieve?history=20261020-040112Z',
+    )
+  })
+})
+
+describe('visualHistoryApiPath / parseHistoryQuery', () => {
+  it('快照路径编码 id', () => {
+    const path = visualHistoryApiPath('图论', '最短路', '~', '20261020-040112Z-2')
+    expect(path.endsWith('/history/20261020-040112Z-2')).toBe(true)
+    expect(visualHistoryIframeSrc('图论', '最短路', '~', '20261020-040112Z-2')).toBe(`/api${path}`)
+  })
+  it('拒绝非法 history query', () => {
+    expect(parseHistoryQuery('')).toBeNull()
+    expect(parseHistoryQuery('..')).toBeNull()
+    expect(parseHistoryQuery('20261020-040112Z')).toBe('20261020-040112Z')
+    expect(parseHistoryQuery('20261020-040112Z-2')).toBe('20261020-040112Z-2')
+  })
+  it('格式化 saved_at', () => {
+    expect(formatHistorySavedAt('2026-10-20T04:01:12Z')).toBe('2026-10-20 04:01:12 UTC')
   })
 })
 

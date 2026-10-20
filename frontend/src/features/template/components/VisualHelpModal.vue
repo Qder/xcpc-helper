@@ -28,7 +28,7 @@ const emit = defineEmits<{
         </li>
         <li>
           <b>在本页粘贴导入</b>
-          ：点「导入可视化」，选模板和版本，把完整 HTML 粘进去。已有演示会先确认再覆盖。
+          ：点「导入可视化」，选模板和版本，把完整 HTML 粘进去。已有演示会先确认再覆盖（覆盖前会留一份历史）。
         </li>
         <li>
           <b>让 AI 生成</b>
@@ -36,7 +36,7 @@ const emit = defineEmits<{
         </li>
       </ol>
       <p class="vis-help-muted">
-        骨架在 <code>docs/design/template/visual-skeleton.html</code>。文件必须内联全部 CSS/JS，不要引用外部资源。
+        骨架在 <code>docs/design/template/visual-skeleton.html</code>。文件必须内联全部 CSS/JS，不要引用外部资源。演示页可预览、恢复或清空历史快照，不会删除当前演示。
       </p>
     </div>
     <div class="modal-actions">
