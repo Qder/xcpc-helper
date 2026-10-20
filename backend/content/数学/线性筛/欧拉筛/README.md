@@ -6,6 +6,9 @@ tags:
 - 筛法
 source: 洛谷 P3383
 page: https://www.luogu.com.cn/problem/P3383
+examples:
+- label: 例题1
+  url: https://www.luogu.com.cn/problem/P3383
 priority: 7
 ---
 
