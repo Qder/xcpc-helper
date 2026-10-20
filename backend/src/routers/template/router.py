@@ -21,6 +21,7 @@ from modules.template.schemas import (
     TemplateRename,
     TemplateSummary,
     VersionUpsert,
+    VisualHistoryList,
     VisualUpsert,
 )
 from services.template.service import TemplateService, get_template_service
@@ -81,6 +82,74 @@ async def put_visual(
 ) -> None:
     """PUT .../versions/{version}/visual：写入 visual.html（"~" 表示顶层单版本）。"""
     await asyncio.to_thread(service.write_visual, category, name, version, payload)
+
+
+@router.get(
+    "/templates/{category}/{name}/versions/{version}/visual/history",
+    response_model=VisualHistoryList,
+)
+async def list_visual_history(
+    category: str, name: str, version: str, service: ServiceDep
+) -> VisualHistoryList:
+    """GET .../visual/history：该版本历史快照列表（新到旧）。"""
+    return await asyncio.to_thread(
+        service.list_visual_history, category, name, version
+    )
+
+
+@router.get("/templates/{category}/{name}/versions/{version}/visual/history/{snapshot_id}")
+async def get_visual_history(
+    category: str, name: str, version: str, snapshot_id: str, service: ServiceDep
+) -> Response:
+    """GET .../visual/history/{id}：托管一份历史快照 HTML。"""
+    data = await asyncio.to_thread(
+        service.read_visual_history, category, name, version, snapshot_id
+    )
+    return Response(
+        content=data,
+        media_type="text/html; charset=utf-8",
+        headers={
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": VISUAL_CSP,
+        },
+    )
+
+
+@router.post(
+    "/templates/{category}/{name}/versions/{version}/visual/history/{snapshot_id}/restore",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def restore_visual_history(
+    category: str, name: str, version: str, snapshot_id: str, service: ServiceDep
+) -> None:
+    """POST .../visual/history/{id}/restore：把快照写回当前 visual.html。"""
+    await asyncio.to_thread(
+        service.restore_visual_history, category, name, version, snapshot_id
+    )
+
+
+@router.delete(
+    "/templates/{category}/{name}/versions/{version}/visual/history/{snapshot_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_visual_history_item(
+    category: str, name: str, version: str, snapshot_id: str, service: ServiceDep
+) -> None:
+    """DELETE .../visual/history/{id}：删除一份快照。"""
+    await asyncio.to_thread(
+        service.delete_visual_history_item, category, name, version, snapshot_id
+    )
+
+
+@router.delete(
+    "/templates/{category}/{name}/versions/{version}/visual/history",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def clear_visual_history(
+    category: str, name: str, version: str, service: ServiceDep
+) -> None:
+    """DELETE .../visual/history：清空该版本全部历史。"""
+    await asyncio.to_thread(service.clear_visual_history, category, name, version)
 
 
 @router.get("/templates/{template_id:path}", response_model=TemplateDetail)

@@ -21,6 +21,8 @@ from modules.template.schemas import (
     TemplateSummary,
     TemplateVersion,
     VersionUpsert,
+    VisualHistoryItem,
+    VisualHistoryList,
     VisualUpsert,
 )
 
@@ -167,6 +169,67 @@ class TemplateService:
                 self._settings.visual_max_bytes,
             )
             self.rebuild()
+
+    def list_visual_history(
+        self, category: str, name: str, version_token: str
+    ) -> VisualHistoryList:
+        """列出某版本 visual.html 历史快照。"""
+        items = writer.list_visual_history(
+            self._settings.content_dir, category, name, version_token
+        )
+        return VisualHistoryList(
+            items=[VisualHistoryItem.model_validate(it) for it in items]
+        )
+
+    def read_visual_history(
+        self, category: str, name: str, version_token: str, snapshot_id: str
+    ) -> bytes:
+        """读取一份历史快照。"""
+        return writer.read_visual_history_bytes(
+            self._settings.content_dir,
+            category,
+            name,
+            version_token,
+            snapshot_id,
+            self._settings.visual_max_bytes,
+        )
+
+    def restore_visual_history(
+        self, category: str, name: str, version_token: str, snapshot_id: str
+    ) -> None:
+        """把快照写回当前 visual.html 并重建索引。"""
+        with self._lock:
+            writer.restore_visual_history(
+                self._settings.content_dir,
+                category,
+                name,
+                version_token,
+                snapshot_id,
+                self._settings.visual_max_bytes,
+            )
+            self.rebuild()
+
+    def delete_visual_history_item(
+        self, category: str, name: str, version_token: str, snapshot_id: str
+    ) -> None:
+        """删除一份历史快照。"""
+        with self._lock:
+            writer.delete_visual_history_item(
+                self._settings.content_dir,
+                category,
+                name,
+                version_token,
+                snapshot_id,
+            )
+
+    def clear_visual_history(
+        self, category: str, name: str, version_token: str
+    ) -> None:
+        """清空该版本全部历史快照。"""
+        with self._lock:
+            writer.clear_visual_history(
+                self._settings.content_dir, category, name, version_token
+            )
 
     def create_template(self, payload: TemplateCreate) -> TemplateDetail:
         """新建空主标签目录并重建索引，返回新建模板的详情。"""

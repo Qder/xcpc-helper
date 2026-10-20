@@ -294,3 +294,54 @@ def test_api_put_visual_then_get(tmp_path: Path, content_dir: Path) -> None:
         svc.write_visual("..", "sieve", "~", VisualUpsert(html=html))
     with pytest.raises(BadRequestError):
         svc.write_visual("math", "sieve", "..", VisualUpsert(html=html))
+
+
+def test_api_visual_history_restore_and_clear(tmp_path: Path, content_dir: Path) -> None:
+    client = _visual_client(tmp_path, content_dir)
+    html_a = "<!doctype html><html><body>A</body></html>"
+    html_b = "<!doctype html><html><body>B</body></html>"
+    base = "/api/templates/math/sieve/versions/~/visual"
+    assert client.put(base, json={"html": html_a}).status_code == 204
+    assert client.put(base, json={"html": html_b}).status_code == 204
+
+    listed = client.get(f"{base}/history")
+    assert listed.status_code == 200
+    items = listed.json()["items"]
+    assert len(items) == 1
+    snap_id = items[0]["id"]
+    assert items[0]["bytes"] == len(html_a.encode("utf-8"))
+    assert items[0]["saved_at"].endswith("Z")
+
+    got = client.get(f"{base}/history/{snap_id}")
+    assert got.status_code == 200
+    assert got.headers["x-content-type-options"] == "nosniff"
+    assert "sandbox" in got.headers["content-security-policy"]
+    assert got.content.decode("utf-8") == html_a
+
+    zh_base = "/api/templates/字符串/哈希/versions/~/visual"
+    assert client.put(zh_base, json={"html": html_a}).status_code == 204
+    assert client.put(zh_base, json={"html": html_b}).status_code == 204
+    assert client.get(f"{zh_base}/history").json()["items"]
+
+    nested = "/api/templates/ds/dsu/versions/path-compression/visual"
+    assert client.put(nested, json={"html": html_a}).status_code == 204
+    assert client.put(nested, json={"html": html_b}).status_code == 204
+
+    assert client.post(f"{base}/history/{snap_id}/restore").status_code == 204
+    assert client.get(base).content.decode("utf-8") == html_a
+
+    assert client.delete(f"{base}/history/{snap_id}").status_code == 204
+    assert client.delete(f"{base}/history/{snap_id}").status_code == 404
+    assert client.delete(f"{base}/history").status_code == 204
+    assert client.get(f"{base}/history").json()["items"] == []
+    assert client.get(base).content.decode("utf-8") == html_a
+
+    assert client.get(f"{base}/history/nope").status_code == 400
+    assert client.get(f"{base}/history/20261020-000000Z").status_code == 404
+
+    settings = Settings(content_dir=content_dir, data_dir=tmp_path / "data-hist")
+    svc = TemplateService(settings)
+    with pytest.raises(BadRequestError):
+        svc.read_visual_history("math", "sieve", "~", "..")
+    with pytest.raises(BadRequestError):
+        svc.read_visual_history("..", "sieve", "~", "20261020-000000Z")

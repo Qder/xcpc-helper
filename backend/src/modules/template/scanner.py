@@ -24,6 +24,7 @@ from modules.template.parser import parse_readme_file
 logger = logging.getLogger("xcpc.scanner")
 
 VISUAL_FILENAME = "visual.html"
+VISUAL_HISTORY_DIR = ".visual-history"
 
 CODE_EXTENSIONS: dict[str, str] = {
     ".cpp": "cpp",

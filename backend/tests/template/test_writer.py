@@ -16,7 +16,7 @@ from core.exceptions import (
 from main import create_app
 from modules.template import writer
 from modules.template.parser import parse_readme_text
-from modules.template.scanner import find_visual_file, scan_content
+from modules.template.scanner import VISUAL_HISTORY_DIR, find_visual_file, scan_content
 from modules.template.schemas import VersionMetaInput, VersionUpsert
 from services.template.service import TemplateService, get_template_service
 
@@ -235,8 +235,11 @@ def test_delete_version_dir(content_dir: Path) -> None:
     # 副标签版本：整目录删除
     writer.delete_version_dir(content_dir, "ds", "dsu", "with-weight", "dsu_weight.cpp")
     assert not (content_dir / "ds" / "dsu" / "with-weight").exists()
-    # 顶层单版本：删代码、README 与 visual.html，目录留空成为空主标签
+    # 顶层单版本：删代码、README、visual.html 与 .visual-history/，目录留空成为空主标签
     (content_dir / "math" / "sieve" / "VISUAL.HTML").write_text("<p></p>", encoding="utf-8")
+    hist = content_dir / "math" / "sieve" / VISUAL_HISTORY_DIR
+    hist.mkdir()
+    (hist / "20261020-040112Z.html").write_text("<p>old</p>", encoding="utf-8")
     writer.delete_version_dir(content_dir, "math", "sieve", "", "euler_sieve.cpp")
     template_dir = content_dir / "math" / "sieve"
     assert template_dir.is_dir()
@@ -276,6 +279,73 @@ def test_write_visual_html_top_level_overwrite_and_reject(content_dir: Path) -> 
         writer.write_visual_html(content_dir, "math", "sieve", "~", html, 8)
     with pytest.raises(BadRequestError):
         writer.write_visual_html(content_dir, "..", "sieve", "~", html, 1000)
+
+
+def test_visual_history_archive_restore_clear(content_dir: Path) -> None:
+    html_a = "<!doctype html><html><body>A</body></html>"
+    html_b = "<!doctype html><html><body>B</body></html>"
+    writer.write_visual_html(content_dir, "math", "sieve", "~", html_a, 2 * 1024 * 1024)
+    writer.write_visual_html(content_dir, "math", "sieve", "~", html_a, 2 * 1024 * 1024)
+    assert writer.list_visual_history(content_dir, "math", "sieve", "~") == []
+
+    writer.write_visual_html(content_dir, "math", "sieve", "~", html_b, 2 * 1024 * 1024)
+    items = writer.list_visual_history(content_dir, "math", "sieve", "~")
+    assert len(items) == 1
+    snap_id = str(items[0]["id"])
+    assert snap_id.endswith("Z") or "-2" in snap_id
+    assert (content_dir / "math" / "sieve" / "visual.html").read_text(
+        encoding="utf-8"
+    ) == html_b
+    got = writer.read_visual_history_bytes(
+        content_dir, "math", "sieve", "~", snap_id, 2 * 1024 * 1024
+    )
+    assert got.decode("utf-8") == html_a
+
+    writer.write_visual_html(
+        content_dir, "字符串", "哈希", "~", html_a, 2 * 1024 * 1024
+    )
+    writer.write_visual_html(
+        content_dir, "字符串", "哈希", "~", html_b, 2 * 1024 * 1024
+    )
+    zh_items = writer.list_visual_history(content_dir, "字符串", "哈希", "~")
+    assert len(zh_items) == 1
+
+    writer.write_visual_html(
+        content_dir, "ds", "dsu", "path-compression", html_a, 2 * 1024 * 1024
+    )
+    writer.write_visual_html(
+        content_dir, "ds", "dsu", "path-compression", html_b, 2 * 1024 * 1024
+    )
+    nested = writer.list_visual_history(content_dir, "ds", "dsu", "path-compression")
+    assert len(nested) == 1
+
+    scan = scan_content(content_dir)
+    sieve = next(t for t in scan.templates if t.id == "math/sieve")
+    assert len(sieve.versions) == 1
+
+    writer.restore_visual_history(content_dir, "math", "sieve", "~", snap_id, 2 * 1024 * 1024)
+    assert (content_dir / "math" / "sieve" / "visual.html").read_text(
+        encoding="utf-8"
+    ) == html_a
+    after_restore = writer.list_visual_history(content_dir, "math", "sieve", "~")
+    assert len(after_restore) == 2
+
+    writer.delete_visual_history_item(content_dir, "math", "sieve", "~", snap_id)
+    assert len(writer.list_visual_history(content_dir, "math", "sieve", "~")) == 1
+    writer.clear_visual_history(content_dir, "math", "sieve", "~")
+    assert writer.list_visual_history(content_dir, "math", "sieve", "~") == []
+    assert (content_dir / "math" / "sieve" / "visual.html").read_text(
+        encoding="utf-8"
+    ) == html_a
+
+    with pytest.raises(BadRequestError):
+        writer.read_visual_history_bytes(content_dir, "math", "sieve", "~", "..", 1000)
+    with pytest.raises(BadRequestError):
+        writer.read_visual_history_bytes(content_dir, "math", "sieve", "~", "nope", 1000)
+    with pytest.raises(NotFoundError):
+        writer.delete_visual_history_item(
+            content_dir, "math", "sieve", "~", "20261020-000000Z"
+        )
 
 
 # ===== 路由测试 =====

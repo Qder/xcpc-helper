@@ -10,7 +10,9 @@
   写出的内容保证能被 parser 原样读回（回环一致）。
 """
 
+import datetime
 import os
+import re
 import shutil
 import tempfile
 from pathlib import Path
@@ -26,10 +28,16 @@ from core.exceptions import (
     PayloadTooLargeError,
 )
 from modules.template.models import DEFAULT_PRIORITY
-from modules.template.scanner import CODE_EXTENSIONS, VISUAL_FILENAME, find_visual_file
+from modules.template.scanner import (
+    CODE_EXTENSIONS,
+    VISUAL_FILENAME,
+    VISUAL_HISTORY_DIR,
+    find_visual_file,
+)
 from modules.template.schemas import ROOT_VERSION_TOKEN, VersionMetaInput, VersionUpsert
 
 # 名称校验规则已提升至 common.validation（打印册功能共用）
+_SNAPSHOT_ID_RE = re.compile(r"^\d{8}-\d{6}Z(?:-\d+)?$")
 
 
 def validate_ext(ext: str) -> str:
@@ -251,10 +259,150 @@ def write_visual_html(
             f"可视化文件过大（{size} 字节，上限 {max_bytes} 字节）"
         )
     existing = find_visual_file(version_dir)
+    if existing is not None:
+        old = existing.read_text(encoding="utf-8")
+        if old != html:
+            _archive_visual(version_dir, old)
     target = version_dir / VISUAL_FILENAME
     if existing is not None and existing.resolve() != target.resolve():
         existing.unlink()
     _atomic_write(target, html)
+
+
+def _archive_visual(version_dir: Path, html: str) -> None:
+    """把将被覆盖的 visual.html 拷到 .visual-history/<stamp>.html。"""
+    hist = version_dir / VISUAL_HISTORY_DIR
+    hist.mkdir(exist_ok=True)
+    stamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%d-%H%M%SZ")
+    dest = hist / f"{stamp}.html"
+    n = 2
+    while dest.exists():
+        dest = hist / f"{stamp}-{n}.html"
+        n += 1
+    _atomic_write(dest, html)
+
+
+def _history_dir(content_dir: Path, category: str, name: str, version_token: str) -> Path:
+    version_dir = resolve_version_dir(content_dir, category, name, version_token)
+    if not version_dir.is_dir():
+        raise NotFoundError(f"版本不存在: {category}/{name}/{version_token}")
+    return version_dir / VISUAL_HISTORY_DIR
+
+
+def _validate_snapshot_id(snapshot_id: str) -> str:
+    cleaned = snapshot_id.strip()
+    if not _SNAPSHOT_ID_RE.fullmatch(cleaned):
+        raise BadRequestError("历史快照 id 无效")
+    return cleaned
+
+
+def _snapshot_path(
+    content_dir: Path, category: str, name: str, version_token: str, snapshot_id: str
+) -> Path:
+    hist = _history_dir(content_dir, category, name, version_token)
+    snap = _validate_snapshot_id(snapshot_id)
+    path = (hist / f"{snap}.html").resolve()
+    root = content_dir.resolve()
+    if not path.is_relative_to(root):
+        raise BadRequestError("可视化路径超出内容目录")
+    return path
+
+
+def _saved_at_from_id(snapshot_id: str) -> str:
+    """把 20261020-040112Z 转成 ISO 8601；带 -2 后缀时仍用时间戳部分。"""
+    day = snapshot_id[:8]
+    time_part = snapshot_id[9:].split("-", 1)[0].removesuffix("Z")
+    return f"{day[:4]}-{day[4:6]}-{day[6:8]}T{time_part[:2]}:{time_part[2:4]}:{time_part[4:6]}Z"
+
+
+def list_visual_history(
+    content_dir: Path, category: str, name: str, version_token: str
+) -> list[dict[str, str | int]]:
+    """列出版本目录 .visual-history/ 下的快照，新到旧。"""
+    hist = _history_dir(content_dir, category, name, version_token)
+    if not hist.is_dir():
+        return []
+    items: list[dict[str, str | int]] = []
+    for path in hist.iterdir():
+        if not path.is_file() or path.suffix.lower() != ".html":
+            continue
+        snap = path.stem
+        if not _SNAPSHOT_ID_RE.fullmatch(snap):
+            continue
+        items.append(
+            {
+                "id": snap,
+                "bytes": path.stat().st_size,
+                "saved_at": _saved_at_from_id(snap),
+            }
+        )
+    items.sort(key=lambda it: str(it["id"]), reverse=True)
+    return items
+
+
+def read_visual_history_bytes(
+    content_dir: Path,
+    category: str,
+    name: str,
+    version_token: str,
+    snapshot_id: str,
+    max_bytes: int,
+) -> bytes:
+    """读取一份历史快照；不存在 404，超限 413。"""
+    path = _snapshot_path(content_dir, category, name, version_token, snapshot_id)
+    if not path.is_file():
+        raise NotFoundError(
+            f"历史快照不存在: {category}/{name}/{version_token}/{snapshot_id}"
+        )
+    size = path.stat().st_size
+    if size > max_bytes:
+        raise PayloadTooLargeError(
+            f"可视化文件过大（{size} 字节，上限 {max_bytes} 字节）"
+        )
+    return path.read_bytes()
+
+
+def delete_visual_history_item(
+    content_dir: Path, category: str, name: str, version_token: str, snapshot_id: str
+) -> None:
+    """删除一份历史快照，不碰当前 visual.html。"""
+    path = _snapshot_path(content_dir, category, name, version_token, snapshot_id)
+    if not path.is_file():
+        raise NotFoundError(
+            f"历史快照不存在: {category}/{name}/{version_token}/{snapshot_id}"
+        )
+    path.unlink()
+
+
+def clear_visual_history(
+    content_dir: Path, category: str, name: str, version_token: str
+) -> None:
+    """清空该版本全部历史快照，当前 visual.html 不动。"""
+    hist = _history_dir(content_dir, category, name, version_token)
+    if hist.is_dir():
+        shutil.rmtree(hist)
+
+
+def restore_visual_history(
+    content_dir: Path,
+    category: str,
+    name: str,
+    version_token: str,
+    snapshot_id: str,
+    max_bytes: int,
+) -> None:
+    """把快照写回当前 visual.html（现稿若不同会再归档）。"""
+    data = read_visual_history_bytes(
+        content_dir, category, name, version_token, snapshot_id, max_bytes
+    )
+    write_visual_html(
+        content_dir,
+        category,
+        name,
+        version_token,
+        data.decode("utf-8"),
+        max_bytes,
+    )
 
 
 def delete_template_dir(content_dir: Path, category: str, name: str) -> None:
@@ -397,3 +545,6 @@ def delete_version_dir(
     visual = find_visual_file(template_dir)
     if visual is not None:
         visual.unlink()
+    hist = template_dir / VISUAL_HISTORY_DIR
+    if hist.is_dir():
+        shutil.rmtree(hist)

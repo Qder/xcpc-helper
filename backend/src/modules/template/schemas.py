@@ -104,6 +104,18 @@ class VisualUpsert(BaseModel):
     html: str
 
 
+class VisualHistoryItem(BaseModel):
+    """一份 visual.html 历史快照的摘要。"""
+
+    id: str
+    bytes: int
+    saved_at: str
+
+
+class VisualHistoryList(BaseModel):
+    items: list[VisualHistoryItem]
+
+
 class VersionUpsert(BaseModel):
     """新建/更新版本的请求体。
 
