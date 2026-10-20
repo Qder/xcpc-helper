@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Play, Search } from 'lucide-vue-next'
-import { NAlert, NEmpty, NInput, NSelect, NSpin } from 'naive-ui'
+import { FileUp, Play, Search } from 'lucide-vue-next'
+import { NAlert, NButton, NEmpty, NInput, NSelect, NSpin } from 'naive-ui'
+import VisualImportModal from '@/features/template/components/VisualImportModal.vue'
 import { fetchCategories, fetchTemplates, type ApiCategory } from '@/features/template/api'
 import { filterVisualSummaries, splitTemplateId, visualViewerPath } from '@/features/template/model/visual'
 import type { TemplateSummary } from '@/features/template/types'
@@ -14,6 +15,7 @@ const loading = ref(false)
 const errorText = ref<string | null>(null)
 const items = ref<TemplateSummary[]>([])
 const cats = ref<ApiCategory[]>([])
+const showImport = ref(false)
 
 const categoryOptions = computed(() => [
   { label: '全部分类', value: 'all' },
@@ -44,6 +46,11 @@ function openCard(item: TemplateSummary): void {
   void router.push(visualViewerPath(cat, name))
 }
 
+async function onImported(cat: string, name: string, versionToken: string): Promise<void> {
+  await load()
+  void router.push(visualViewerPath(cat, name, versionToken))
+}
+
 onMounted(() => {
   void load()
 })
@@ -58,6 +65,12 @@ onMounted(() => {
         </template>
       </n-input>
       <n-select v-model:value="category" :options="categoryOptions" class="vis-cat" />
+      <div class="vis-toolbar-actions">
+        <n-button size="small" @click="showImport = true">
+          <template #icon><FileUp :size="14" /></template>
+          导入可视化
+        </n-button>
+      </div>
     </div>
     <n-spin :show="loading">
       <n-alert v-if="errorText" type="error" :bordered="false">{{ errorText }}</n-alert>
@@ -90,6 +103,7 @@ onMounted(() => {
         </button>
       </div>
     </n-spin>
+    <VisualImportModal v-model:show="showImport" @imported="onImported" />
   </div>
 </template>
 
@@ -112,6 +126,13 @@ onMounted(() => {
 
 .vis-cat {
   width: 200px;
+}
+
+.vis-toolbar-actions {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .vis-empty-hint {

@@ -103,3 +103,21 @@ export function deleteVersion(templateId: string, token: string): Promise<void> 
     { method: 'DELETE' },
   )
 }
+
+/** 写入某版本 visual.html；顶层单版本 token 为 ~ */
+export function putVisual(
+  category: string,
+  name: string,
+  versionToken: string,
+  html: string,
+): Promise<void> {
+  return request<void>(
+    `/templates/${encodeURIComponent(category)}/${encodeURIComponent(name)}` +
+      `/versions/${encodeURIComponent(versionToken)}/visual`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ html }),
+    },
+  )
+}
