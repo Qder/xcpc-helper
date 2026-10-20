@@ -1,0 +1,749 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>算法可视化</title>
+<style>
+:root {
+  --hue: 160;
+  --bg: #f6f5f2; --surface: #ffffff; --text: #1f1d1a; --faint: #7a766f; --border: #e0ddd6;
+  --hl: rgba(37, 99, 235, .14); --accent: hsl(var(--hue), 60%, 40%); --warn: #d97706; --ok: #16a34a; --bad: #dc2626; --info: #2563eb;
+  --code-bg: #1c1a17; --code-bg-head: #26231f; --code-border: #35302a; --code-text: #e6e1d6; --code-ln: #6d675c;
+  --code-comment: #7d7a68; --code-string: #d9a35f; --code-number: #c98fc0; --code-preproc: #86b8b1;
+  --code-kw: hsl(var(--hue), 72%, 68%);
+}
+:root[data-theme="dark"] {
+  --bg: #191816; --surface: #23211e; --text: #ece9e3; --faint: #9a958c; --border: #37342f;
+  --hl: rgba(96, 165, 250, .22); --accent: hsl(var(--hue), 55%, 55%); --warn: #f59e0b; --ok: #4ade80; --bad: #f87171; --info: #60a5fa;
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: 16px; background: var(--bg); color: var(--text);
+  font: 14px/1.6 system-ui, -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; margin-bottom: 12px; }
+h1 { font-size: 18px; margin: 0; }
+.chip { font-size: 12px; color: var(--faint); border: 1px solid var(--border); border-radius: 999px; padding: 0 10px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 12px; }
+#stage { min-height: 220px; overflow: auto; }
+.main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+@media (min-width: 900px) { .main.has-code { grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); } }
+#codeWrap { min-width: 0; display: flex; flex-direction: column; background: var(--code-bg);
+  border: 1px solid var(--code-border); border-radius: 8px; overflow: hidden; color: var(--code-text); }
+.code-head { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 9px 12px; background: var(--code-bg-head); border-bottom: 1px solid var(--code-border); flex: none; }
+.code-status { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.status-led { width: 8px; height: 8px; border-radius: 50%; background: hsl(var(--hue), 72%, 62%); flex: none;
+  animation: led-pulse 2.2s ease-out infinite; }
+@keyframes led-pulse {
+  0% { box-shadow: 0 0 0 0 hsl(var(--hue), 72%, 62%, .45); }
+  70% { box-shadow: 0 0 0 7px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.code-file { font: 12px/1.4 ui-monospace, Consolas, "Cascadia Mono", monospace; color: var(--code-text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.code-lang { font: 10.5px/1.4 ui-monospace, Consolas, monospace; color: var(--code-ln);
+  border: 1px solid var(--code-border); border-radius: 4px; padding: 1px 6px; }
+.code-lines { font: 11px/1.4 ui-monospace, Consolas, monospace; color: var(--code-ln); }
+.code-actions { display: flex; gap: 6px; flex: none; }
+#codeWrap.collapsed #code { display: none; }
+#codeWrap.collapsed .code-head { border-bottom: none; }
+#codeWrap .copy-btn { display: inline-flex; align-items: center; height: 26px; padding: 0 10px;
+  border: 1px solid var(--code-border); border-radius: 6px; background: transparent; color: var(--code-text);
+  font-size: 12px; min-height: 26px; }
+#codeWrap .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+#codeWrap .copy-btn.copied { border-color: var(--accent); color: var(--accent); background: hsl(var(--hue), 60%, 40%, .12); }
+#code { max-height: 440px; overflow: auto; position: relative; background: var(--code-bg); padding: 8px 0 16px;
+  font: 13px/1.7 ui-monospace, Consolas, "Cascadia Mono", monospace; color: var(--code-text); }
+.ln { display: flex; white-space: pre; border-left: 3px solid transparent; padding-right: 16px; }
+.ln b { flex: none; width: 3.2em; text-align: right; padding-right: 12px; color: var(--code-ln); font-weight: 400; user-select: none; font-size: 11px; }
+.ln.hl { background: rgb(255 255 255 / 0.06); border-left-color: var(--accent); }
+.ln.hl b { color: var(--accent); }
+.tok-kw { color: var(--code-kw); }
+.tok-str { color: var(--code-string); }
+.tok-num { color: var(--code-number); }
+.tok-cmt { color: var(--code-comment); font-style: italic; }
+.tok-pp { color: var(--code-preproc); }
+#note { min-height: 24px; font-weight: 600; }
+#legend { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--faint); font-size: 12px; margin-top: 8px; }
+#legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.card.controls { position: sticky; top: 0; z-index: 20; }
+button { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 4px 12px; min-height: 32px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+input[type=range] { accent-color: var(--accent); }
+#progress { flex: 1 1 200px; min-width: 120px; }
+textarea { width: 100%; min-height: 60px; font: 13px/1.5 ui-monospace, Consolas, monospace; color: var(--text);
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px; resize: vertical; }
+#error { color: var(--bad); min-height: 20px; font-size: 13px; }
+footer { color: var(--faint); font-size: 12px; }
+
+/* --- 以下仅供 render 使用的样式（DP 系列） --- */
+.items-box { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.item-chip { font-size: 12px; border: 1px solid var(--border); border-radius: 999px; padding: 1px 10px; color: var(--faint); }
+.item-chip.on { border: 2px solid var(--accent); color: var(--text); font-weight: 700; }
+.item-chip.done { border: 2px solid var(--ok); color: var(--text); }
+.plist { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.pchip { font-size: 12px; border: 1px dashed var(--border); border-radius: 6px; padding: 1px 8px; color: var(--faint); font-family: ui-monospace, Consolas, monospace; }
+.pchip.on { border: 2px solid var(--accent); color: var(--text); font-weight: 700; }
+.sub-line { margin-bottom: 6px; font-size: 12px; color: var(--faint); }
+.dp-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(44px, 1fr)); gap: 6px; }
+.dp-cell { min-width: 0; text-align: center; border-radius: 8px; padding: 3px 4px 5px; background: var(--surface); overflow: hidden; }
+.dp-idx { font-size: 11px; color: var(--faint); }
+.dp-val { font-size: 16px; font-weight: 700; line-height: 1.3; }
+.dp-tag { font-size: 10px; min-height: 14px; color: var(--faint); white-space: nowrap; }
+.eq-line { margin-top: 12px; font: 13px/1.7 ui-monospace, Consolas, monospace; color: var(--text); }
+.tbl { display: grid; gap: 3px; margin-bottom: 4px; }
+.tc { text-align: center; border-radius: 5px; padding: 1px 2px; background: var(--surface); border: 1px solid var(--border); font-size: 12px; line-height: 1.6; }
+.tc.dim { color: var(--faint); background: var(--bg); }
+.tc.sm { font-size: 11px; }
+.rl { text-align: right; font-size: 11px; color: var(--faint); padding-right: 4px; align-self: center; }
+.hd { text-align: center; font-size: 10px; color: var(--faint); }
+.strip { display: grid; grid-auto-flow: column; gap: 4px; margin-bottom: 8px; }
+.strip .b { text-align: center; border: 1px solid var(--border); border-radius: 4px; padding: 2px 0; font: 12px/1.4 ui-monospace, Consolas, monospace; background: var(--surface); color: var(--faint); }
+.strip .b.on { border: 2px solid var(--accent); color: var(--text); font-weight: 700; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title"></h1>
+  <span class="chip" id="complexity"></span>
+  <span class="chip" id="stepInfo">0 / 0</span>
+</header>
+
+<div class="card controls" role="group" aria-label="播放控制">
+  <button id="btnReset" title="重置 (Home)">重置</button>
+  <button id="btnPrev" title="上一步 (←)">上一步</button>
+  <button id="btnPlay" class="primary" title="播放 / 暂停 (空格)">播放</button>
+  <button id="btnNext" title="下一步 (→)">下一步</button>
+  <input id="progress" type="range" min="0" max="0" value="0" aria-label="进度">
+  <label>速度 <input id="speed" type="range" min="1" max="10" value="5" aria-label="速度"></label>
+</div>
+
+<div class="card main has-code" id="main">
+  <div class="viz">
+    <div id="note" aria-live="polite"></div>
+    <div id="stage"></div>
+    <div id="legend"></div>
+  </div>
+  <aside id="codeWrap">
+    <div class="code-head">
+      <div class="code-status">
+        <span class="status-led" aria-hidden="true"></span>
+        <span class="code-file" id="codeFile">code.cpp</span>
+        <span class="code-lang" id="codeLang">cpp</span>
+        <span class="code-lines" id="codeLines"></span>
+      </div>
+      <div class="code-actions">
+        <button type="button" class="copy-btn" id="btnCopyCode">复制</button>
+        <button type="button" class="copy-btn" id="btnToggleCode">收起</button>
+      </div>
+    </div>
+    <div id="code" role="region" aria-label="模板代码"></div>
+  </aside>
+</div>
+
+<div class="card">
+  <label for="input"><b>输入数据</b></label>
+  <textarea id="input" spellcheck="false"></textarea>
+  <div class="controls" style="margin-top:8px">
+    <button id="btnApply">应用输入</button>
+    <button id="btnRandom">随机生成</button>
+    <span id="hint" class="chip"></span>
+  </div>
+  <div id="error" role="alert"></div>
+</div>
+
+<footer>教学演示，以模板代码为准。快捷键：空格 播放/暂停，← → 单步，Home 重置。</footer>
+
+<script type="text/plain" id="code-src">
+void get_sz_son()
+{
+	for(int i = 1; i <= n; i ++) sz[i] = 1, son[i] = 0;
+	for(int i = ocnt; i >= 2; i --)
+	{
+		int u = order[i];
+		sz[fa[u]] += sz[u];
+		if(sz[u] > sz[son[fa[u]]]) son[fa[u]] = u; //sz[0]、son[0] 恒为 0，不需要特判
+	}
+}
+
+// 第二遍：手写栈模拟 DFS（先重儿子后轻儿子），根那侧的 dfs2 递归在长链时会爆栈
+void get_dfn_top(int rt)
+{
+	stack<pair<int, int> > st; st.push(make_pair(rt, rt));
+	while(!st.empty())
+	{
+		int u = st.top().first, tp = st.top().second; st.pop();
+		top[u] = tp; dfn[u] = ++ tim; rnk[tim] = u;
+		for(int v : g[u]) if(v != fa[u] && v != son[u]) st.push(make_pair(v, v)); //轻儿子各开一条链
+		if(son[u]) st.push(make_pair(son[u], tp)); //重儿子最后压栈、最先出栈，同一条链的 dfn 连续
+	} //所以任意子树仍是 dfn 上连续的一段 [dfn[u], dfn[u] + sz[u] - 1]
+}
+
+ll sum[maxn << 2], lazy[maxn << 2];
+
+void build(int p, int l, int r)
+{
+	if(l == r) { sum[p] = wt[l] % mod; return; }
+	int mid = (l + r) >> 1;
+	build(p << 1, l, mid); build(p << 1 | 1, mid + 1, r);
+	sum[p] = (sum[p << 1] + sum[p << 1 | 1]) % mod;
+}
+
+void push_down(int p, int l, int r)
+{
+	if(!lazy[p]) return;
+	int mid = (l + r) >> 1;
+	lazy[p << 1] = (lazy[p << 1] + lazy[p]) % mod;
+	lazy[p << 1 | 1] = (lazy[p << 1 | 1] + lazy[p]) % mod;
+	sum[p << 1] = (sum[p << 1] + lazy[p] * (mid - l + 1)) % mod;
+	sum[p << 1 | 1] = (sum[p << 1 | 1] + lazy[p] * (r - mid)) % mod;
+	lazy[p] = 0;
+}
+
+void range_add(int p, int l, int r, int ql, int qr, ll k)
+{
+	if(ql <= l && r <= qr)
+	{
+		sum[p] = (sum[p] + k * (r - l + 1)) % mod;
+		lazy[p] = (lazy[p] + k) % mod;
+		return;
+	}
+	push_down(p, l, r);
+	int mid = (l + r) >> 1;
+	if(ql <= mid) range_add(p << 1, l, mid, ql, qr, k);
+	if(qr > mid) range_add(p << 1 | 1, mid + 1, r, ql, qr, k);
+	sum[p] = (sum[p << 1] + sum[p << 1 | 1]) % mod;
+}
+
+ll range_sum(int p, int l, int r, int ql, int qr)
+{
+	if(ql <= l && r <= qr) return sum[p];
+	push_down(p, l, r);
+	int mid = (l + r) >> 1; ll res = 0;
+	if(ql <= mid) res += range_sum(p << 1, l, mid, ql, qr);
+	if(qr > mid) res += range_sum(p << 1 | 1, mid + 1, r, ql, qr);
+	return res % mod;
+}
+
+// 路径加：每次把链头深的那条链整段加掉，再跳到链头的父亲
+void path_add(int u, int v, ll k)
+{
+	while(top[u] != top[v])
+	{
+		if(dep[top[u]] < dep[top[v]]) swap(u, v);
+		range_add(1, 1, n, dfn[top[u]], dfn[u], k);
+		u = fa[top[u]];
+	}
+	if(dep[u] > dep[v]) swap(u, v);
+	range_add(1, 1, n, dfn[u], dfn[v], k); //同一条链上 dfn 连续，直接区间加
+}
+
+ll path_sum(int u, int v)
+{
+	ll res = 0;
+	while(top[u] != top[v])
+	{
+		if(dep[top[u]] < dep[top[v]]) swap(u, v);
+		res += range_sum(1, 1, n, dfn[top[u]], dfn[u]);
+		u = fa[top[u]];
+	}
+	if(dep[u] > dep[v]) swap(u, v);
+	res += range_sum(1, 1, n, dfn[u], dfn[v]);
+	return res % mod;
+</script>
+
+<script>
+
+  //只调用,不要改写
+  function layoutCircle(n, cx, cy, r) {
+  return Array.from({ length: n }, (_, i) => {
+    const a = -Math.PI / 2 + (2 * Math.PI * i) / n;
+    return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
+  });
+}
+
+function layoutBinary(root, left, right, dx = 44, dy = 60) {
+  const pos = {};
+  let k = 0;
+  (function dfs(u, d) {
+    if (u == null) return;
+    dfs(left[u], d + 1);
+    pos[u] = { x: k++ * dx, y: d * dy };
+    dfs(right[u], d + 1);
+  })(root, 0);
+  return pos;
+}
+
+function layoutTree(root, children, dx = 48, dy = 64) {
+  const pos = {};
+  let leaf = 0;
+  (function dfs(u, d) {
+    const cs = children[u] || [];
+    if (cs.length === 0) { pos[u] = { x: leaf++ * dx, y: d * dy }; return; }
+    cs.forEach((c) => dfs(c, d + 1));
+    pos[u] = { x: (pos[cs[0]].x + pos[cs[cs.length - 1]].x) / 2, y: d * dy };
+  })(root, 0);
+  return pos;
+}
+
+function edgeSvg(a, b, o = {}) {
+  const { r = 18, directed = false, color = 'var(--faint)', width = 2, dash = '' } = o;
+  const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len;
+  const x1 = a.x + ux * r, y1 = a.y + uy * r, x2 = b.x - ux * r, y2 = b.y - uy * r;
+  let s = '<line x1="' + x1 + '" y1="' + y1 + '" x2="' + x2 + '" y2="' + y2 + '" stroke="' + color +
+    '" stroke-width="' + width + '"' + (dash ? ' stroke-dasharray="' + dash + '"' : '') + '/>';
+  if (directed) {
+    const hx = x2 - ux * 9, hy = y2 - uy * 9;
+    s += '<polygon points="' + x2 + ',' + y2 + ' ' + (hx - uy * 5) + ',' + (hy + ux * 5) + ' ' +
+      (hx + uy * 5) + ',' + (hy - ux * 5) + '" fill="' + color + '"/>';
+  }
+  return s;
+}
+
+function svgBox(points, pad = 30) {
+  const xs = points.map((p) => p.x), ys = points.map((p) => p.y);
+  const x0 = Math.min(...xs) - pad, y0 = Math.min(...ys) - pad;
+  return x0 + ' ' + y0 + ' ' + (Math.max(...xs) + pad - x0) + ' ' + (Math.max(...ys) + pad - y0);
+}
+
+function textSvg(x, y, text, o = {}) {
+  const { size = 12, weight = 400, fill = 'var(--text)', anchor = 'middle' } = o;
+  return '<text x="' + x + '" y="' + y + '" font-size="' + size + '" font-weight="' + weight + '" text-anchor="' + anchor +
+    '" fill="' + fill + '" stroke="var(--surface)" stroke-width="3" paint-order="stroke" stroke-linejoin="round">' + text + '</text>';
+}
+/* === ALGO START：树链剖分（重链 + dfn 区间操作） === */
+const META = {
+  title: '树链剖分（路径加 / 路径和）',
+  complexity: '预处理 O(n)　路径加 / 路径和 O(log² n)',
+  inputHint: '第一行 n m root mod；第二行点权；随后 n-1 行边；再 m 行：1 u v k 路径加，2 u v 路径和，3 u k 子树加，4 u 子树和',
+  file: '树链剖分.cpp',
+  lang: 'cpp',
+  legend: [
+    { color: 'var(--accent)', text: '当前链段 [dfn[top], dfn[u]]（粗实线）' },
+    { color: 'var(--info)', text: '本次路径的另一半 / 目标子树' },
+    { color: 'var(--warn)', text: '正在处理的节点（粗虚线）' },
+    { color: 'var(--ok)', text: '重儿子 / 查询答案' },
+    { color: 'var(--border)', text: '其它节点' },
+  ],
+};
+const MAX_N = 9;
+const MAX_OPS = 5;
+const DEFAULT_INPUT = '5 5 1 100\n1 2 3 4 5\n1 2\n1 3\n3 4\n3 5\n1 4 5 10\n2 4 5\n3 3 7\n4 3\n2 1 1';
+
+function parseInput(text) {
+  if (!text.trim()) throw new Error('请输入树和操作');
+  const lines = text.trim().split(/\r?\n/).filter((s) => s.trim() !== '');
+  if (lines.length < 3) throw new Error('至少需要三行：n m root mod、点权、边');
+  const h = lines[0].trim().split(/\s+/).map(Number);
+  if (h.length !== 4 || h.some((x) => !Number.isInteger(x))) throw new Error('第一行需要四个整数 n m root mod');
+  const [n, m, root, mod] = h;
+  if (n < 2 || n > MAX_N) throw new Error('n 需在 2 到 ' + MAX_N + ' 之间（演示规模）');
+  if (m < 1 || m > MAX_OPS) throw new Error('操作数 m 需在 1 到 ' + MAX_OPS + ' 之间');
+  if (root < 1 || root > n) throw new Error('root 需在 1..n 之间');
+  if (mod < 1 || mod > 1000) throw new Error('mod 需在 1 到 1000 之间');
+  const w = lines[1].trim().split(/\s+/).map(Number);
+  if (w.length !== n || w.some((x) => !Number.isInteger(x))) throw new Error('第二行需要正好 ' + n + ' 个点权');
+  const edges = [];
+  for (let i = 2; i < n + 1; i++) {
+    const p = lines[i].trim().split(/\s+/).map(Number);
+    if (p.length !== 2 || p.some((x) => !Number.isInteger(x))) throw new Error('每条边需要两个整数');
+    if (p[0] < 1 || p[0] > n || p[1] < 1 || p[1] > n || p[0] === p[1]) throw new Error('边端点需在 1..n 且不能自环');
+    edges.push(p);
+  }
+  if (lines.length !== n + 1 + m) throw new Error('需要 ' + (n - 1) + ' 行边和 ' + m + ' 行操作');
+  const ops = [];
+  for (let i = 0; i < m; i++) {
+    const p = lines[n + 1 + i].trim().split(/\s+/).map(Number);
+    if (p.some((x) => !Number.isInteger(x))) throw new Error('操作行只能包含整数');
+    if (p[0] === 1 && p.length === 4) ops.push({ op: 1, u: p[1], v: p[2], k: p[3] });
+    else if (p[0] === 2 && p.length === 3) ops.push({ op: 2, u: p[1], v: p[2] });
+    else if (p[0] === 3 && p.length === 3) ops.push({ op: 3, u: p[1], k: p[2] });
+    else if (p[0] === 4 && p.length === 2) ops.push({ op: 4, u: p[1] });
+    else throw new Error('操作格式：1 u v k / 2 u v / 3 u k / 4 u');
+  }
+  for (const o of ops) {
+    if ((o.u && (o.u < 1 || o.u > n)) || (o.v && (o.v < 1 || o.v > n))) throw new Error('节点编号需在 1..n');
+  }
+  return { n, m, root, mod, w: [0, ...w], edges, ops };
+}
+
+function randomInput() {
+  const n = 5 + Math.floor(Math.random() * 4);
+  const m = 3 + Math.floor(Math.random() * 3);
+  const edges = [];
+  for (let i = 2; i <= n; i++) edges.push((1 + Math.floor(Math.random() * (i - 1))) + ' ' + i);
+  const rows = [n + ' ' + m + ' 1 100', Array.from({ length: n }, () => 1 + Math.floor(Math.random() * 9)).join(' ')]
+    .concat(edges);
+  for (let i = 0; i < m; i++) {
+    const r = Math.random();
+    const u = 1 + Math.floor(Math.random() * n), v = 1 + Math.floor(Math.random() * n);
+    if (r < 0.4) rows.push('1 ' + u + ' ' + v + ' ' + (1 + Math.floor(Math.random() * 5)));
+    else if (r < 0.75) rows.push('2 ' + u + ' ' + v);
+    else if (r < 0.9) rows.push('3 ' + u + ' ' + (1 + Math.floor(Math.random() * 5)));
+    else rows.push('4 ' + u);
+  }
+  return rows.join('\n');
+}
+
+function buildFrames({ n, m, root, mod, w, edges, ops }) {
+  const g = Array.from({ length: n + 1 }, () => []);
+  for (const [u, v] of edges) { g[u].push(v); g[v].push(u); }
+  const dep = new Array(n + 1).fill(0), fa = new Array(n + 1).fill(0);
+  const sz = new Array(n + 1).fill(1), son = new Array(n + 1).fill(0);
+  const top = new Array(n + 1).fill(0), dfn = new Array(n + 1).fill(0), rnk = new Array(n + 1).fill(0);
+  const order = [];
+  fa[root] = 0; dep[root] = 1;
+  const qq = [root];
+  while (qq.length) {
+    const u = qq.shift();
+    order.push(u);
+    for (const v of g[u]) if (v !== fa[u]) { fa[v] = u; dep[v] = dep[u] + 1; qq.push(v); }
+  }
+  const val = new Array(n + 1).fill(0);
+  const lazy = new Array(n + 1).fill(0);
+  let tim = 0;
+  const frames = [];
+  const snap = (f) => frames.push(Object.assign({
+    note: '', lines: [1], dep: dep.slice(), fa: fa.slice(), sz: sz.slice(), son: son.slice(),
+    top: top.slice(), dfn: dfn.slice(), rnk: rnk.slice(), val: val.slice(), lazy: lazy.slice(),
+    u: 0, v: 0, hl: [], seg: null, ans: null, phase: 'init', opIndex: -1,
+  }, f));
+
+  snap({ note: 'get_sz_son：sz 全部置 1、son 清 0，然后按 BFS 逆序回代（BFS 序 = [' + order.join(', ') + ']）', lines: [1, 3, 4] });
+
+  for (let i = 1; i <= n; i++) { sz[i] = 1; son[i] = 0; }
+  for (let i = order.length - 1; i >= 1; i--) {
+    const u = order[i], p = fa[u];
+    sz[p] += sz[u];
+    if (sz[u] > sz[son[p]]) son[p] = u;
+    snap({ note: '逆序回代 ' + u + '：sz[' + p + '] += sz[' + u + '] = ' + sz[u] + ' → ' + sz[p] + '，son[' + p + '] 候选 ' + u + '（当前 ' + son[p] + '）', lines: [1, 3, 4, 6, 7, 8], u, phase: 'sz' });
+  }
+
+  const st = [[root, root]];
+  while (st.length) {
+    const [u, tp] = st.pop();
+    top[u] = tp; dfn[u] = ++tim; rnk[tim] = u;
+    snap({ note: 'get_dfn_top：节点 ' + u + ' 归到链顶 ' + tp + '，dfn[' + u + '] = ' + tim, lines: [13, 15, 18, 19], u, phase: 'dfn' });
+    for (const v of g[u]) if (v !== fa[u] && v !== son[u]) st.push([v, v]);
+    if (son[u]) st.push([son[u], tp]);
+  }
+  for (let i = 1; i <= n; i++) val[i] = w[rnk[i]] % mod;
+  snap({ note: '按 dfn 排好点权 wt = [' + val.slice(1).join(', ') + ']；重儿子会让同一条链的 dfn 连续', lines: [13, 19, 20, 21], phase: 'wt' });
+
+  const rangeAdd = (l, r, k, oi) => {
+    if (l > r) return;
+    for (let i = l; i <= r; i++) lazy[i] = (lazy[i] + k) % mod;
+    snap({ note: 'range_add(dfn 区间 [' + l + ', ' + r + '])：整段 += ' + k + '（模 ' + mod + '）', lines: [46, 48, 50, 51], seg: [l, r], phase: 'range-add', opIndex: oi });
+  };
+  const rangeSum = (l, r) => {
+    let s = 0;
+    for (let i = l; i <= r; i++) s = (s + val[i] + lazy[i]) % mod;
+    return s;
+  };
+
+  for (let oi = 0; oi < ops.length; oi++) {
+    const o = ops[oi];
+    if (o.op === 1 || o.op === 2) {
+      let u = o.u, v = o.v, res = 0;
+      snap({ note: (o.op === 1 ? '路径加' : '路径和') + ' ' + o.u + ' → ' + o.v + '：不断把链头更深的整段处理掉', lines: o.op === 1 ? [71, 72, 74] : [84, 85, 87], u, v, phase: 'path', opIndex: oi });
+      while (top[u] !== top[v]) {
+        if (dep[top[u]] < dep[top[v]]) { const t = u; u = v; v = t; }
+        const l = dfn[top[u]], r = dfn[u];
+        if (o.op === 1) {
+          rangeAdd(l, r, o.k % mod, oi);
+        } else {
+          const s = rangeSum(l, r);
+          res = (res + s) % mod;
+          snap({ note: 'range_sum([' + l + ', ' + r + ']) = ' + s + '，res 累计 ' + res, lines: [90, 93, 98], u, v, seg: [l, r], phase: 'range-sum', opIndex: oi, ans: res });
+        }
+        snap({ note: '链顶 ' + top[u] + ' 这一段处理完，u = fa[' + top[u] + '] = ' + fa[top[u]] + '，跳到浅一层', lines: o.op === 1 ? [78] : [91], u: fa[top[u]], v, hl: [top[u]], phase: 'jump', opIndex: oi, ans: o.op === 2 ? res : null });
+        u = fa[top[u]];
+      }
+      if (dep[u] > dep[v]) { const t = u; u = v; v = t; }
+      const l = dfn[u], r = dfn[v];
+      if (o.op === 1) {
+        rangeAdd(l, r, o.k % mod, oi);
+        snap({ note: '同一条链上 dfn 连续：[dfn[' + u + '], dfn[' + v + ']] = [' + l + ', ' + r + ']，加上 ' + (o.k % mod), lines: [80, 81], u, v, seg: [l, r], phase: 'done-op', opIndex: oi });
+      } else {
+        const s = rangeSum(l, r);
+        res = (res + s) % mod;
+        snap({ note: '同一链：[dfn[' + u + '], dfn[' + v + ']] = [' + l + ', ' + r + ']，区间和 ' + s + '，路径和 = ' + res, lines: [93, 94], u, v, seg: [l, r], phase: 'answer', opIndex: oi, ans: res });
+      }
+    } else if (o.op === 3) {
+      const l = dfn[o.u], r = dfn[o.u] + sz[o.u] - 1;
+      rangeAdd(l, r, o.k % mod, oi);
+      snap({ note: '子树 ' + o.u + ' 在 dfn 上是连续区间 [' + l + ', ' + r + ']（dfn[u] 到 dfn[u]+sz[u]-1），整段加 ' + (o.k % mod), lines: [46, 48, 50, 51], u: o.u, seg: [l, r], phase: 'done-op', opIndex: oi });
+    } else {
+      const l = dfn[o.u], r = dfn[o.u] + sz[o.u] - 1;
+      const s = rangeSum(l, r);
+      snap({ note: '子树 ' + o.u + ' 的 dfn 区间 [' + l + ', ' + r + '] 的和 = ' + s, lines: [61, 63, 68], u: o.u, seg: [l, r], phase: 'answer', opIndex: oi, ans: s });
+    }
+  }
+  snap({ note: '操作结束（lazy 已经体现在每个 dfn 位置上）', lines: [71], phase: 'final', opIndex: ops.length - 1 });
+  return frames;
+}
+
+/* 只根据 frame 与 data 绘制 */
+function render(frame, stage, data) {
+  stage.innerHTML = '';
+  const box = document.createElement('div');
+  const n = data.n;
+  const children = Array.from({ length: n + 1 }, () => []);
+  for (let i = 1; i <= n; i++) if (frame.fa[i]) children[frame.fa[i]].push(i);
+  const pos = {};
+  let leaf = 0;
+  const dx = 56, dy = 62;
+  (function dfs(u, d) {
+    if (!children[u].length) { pos[u] = { x: leaf++ * dx, y: d * dy }; return; }
+    children[u].forEach((c) => dfs(c, d + 1));
+    pos[u] = { x: (pos[children[u][0]].x + pos[children[u][children[u].length - 1]].x) / 2, y: d * dy };
+  })(data.root, 0);
+
+  const ids = Object.keys(pos).map(Number);
+  let s = '<svg width="100%" height="' + (Math.max(...ids.map((u) => pos[u].y)) + 84) + '" viewBox="' + svgBox(ids.map((u) => pos[u]), 42) + '" role="img" aria-label="重链剖分">';
+  for (const u of ids) {
+    for (const c of children[u]) {
+      const heavy = frame.son[u] === c;
+      s += edgeSvg(pos[u], pos[c], { r: 20, width: heavy ? 3.5 : 1.5, color: heavy ? 'var(--ok)' : 'var(--faint)', dash: heavy ? '' : '4 3' });
+    }
+  }
+  for (const u of ids) {
+    let stroke = 'var(--border)', width = 1.5;
+    if (frame.hl.includes(u)) { stroke = 'var(--warn)'; width = 2.5; }
+    if (u === frame.v) { stroke = 'var(--info)'; width = 2.5; }
+    if (u === frame.u) { stroke = 'var(--accent)'; width = 3; }
+    const p = pos[u];
+    s += '<rect x="' + (p.x - 22) + '" y="' + (p.y - 19) + '" width="44" height="38" rx="8" fill="var(--surface)" stroke="' + stroke + '" stroke-width="' + width + '"' + (u === frame.v ? ' stroke-dasharray="4 3"' : '') + '/>';
+    s += textSvg(p.x, p.y - 1, String(u), { size: 13, weight: 700 });
+    s += textSvg(p.x, p.y + 12, 'dfn' + (frame.dfn[u] || '-'), { size: 9, fill: 'var(--faint)' });
+  }
+  s += '</svg>';
+  const wrap = document.createElement('div');
+  wrap.innerHTML = s;
+  box.appendChild(wrap);
+
+  const strip = document.createElement('div');
+  strip.className = 'strip';
+  for (let i = 1; i <= n; i++) {
+    const c = document.createElement('div');
+    c.className = 'b';
+    const inSeg = frame.seg && i >= frame.seg[0] && i <= frame.seg[1];
+    c.style.border = inSeg ? '2px solid var(--accent)' : '1px solid var(--border)';
+    c.style.color = 'var(--text)';
+    c.textContent = (frame.val[i] + frame.lazy[i]) + '\n' + frame.rnk[i];
+    c.style.whiteSpace = 'pre-line';
+    c.style.font = '700 12px/1.35 ui-monospace, Consolas, monospace';
+    strip.appendChild(c);
+  }
+  box.appendChild(strip);
+
+  const eq = document.createElement('div');
+  eq.className = 'eq-line';
+  eq.textContent = 'dfn 数组（上：当前值，下：原节点）' + (frame.seg ? '　本步区间 [' + frame.seg[0] + ', ' + frame.seg[1] + ']' : '') + (frame.ans !== null ? '　答案 ' + frame.ans : '');
+  box.appendChild(eq);
+  stage.appendChild(box);
+}
+/* === ALGO END === */
+
+
+/* ---------- 播放器（固定部分，不要修改） ---------- */
+const MAX_FRAMES = 5000;
+const $ = (id) => document.getElementById(id);
+let data = null, frames = [], idx = 0, timer = null;
+
+const codeSrcText = (($('code-src') || {}).textContent || '').replace(/^\r?\n/, '').replace(/\s+$/, '');
+const codeLines = codeSrcText.split(/\r?\n/);
+const hasCode = codeLines.length > 0 && codeLines.join('').trim() !== '';
+const KW = /^(?:alignas|alignof|and|and_eq|asm|auto|bitand|bitor|bool|break|case|catch|char|class|compl|concept|const|consteval|constexpr|constinit|continue|decltype|default|delete|do|double|else|enum|explicit|export|extern|false|float|for|friend|goto|if|inline|int|long|mutable|namespace|new|noexcept|not|not_eq|nullptr|operator|or|or_eq|private|protected|public|register|requires|return|short|signed|sizeof|static|static_assert|struct|switch|template|this|throw|true|try|typedef|typeid|typename|union|unsigned|using|virtual|void|volatile|wchar_t|while|xor|xor_eq|ll|ull|i64|u64|vector|string|map|set|queue|stack|pair|cin|cout|endl)$/;
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function highlightCpp(line) {
+  let i = 0, out = '', n = line.length;
+  const push = (cls, text) => {
+    const t = escapeHtml(text);
+    out += cls ? '<span class="' + cls + '">' + t + '</span>' : t;
+  };
+  while (i < n) {
+    if (line[i] === '/' && line[i + 1] === '/') { push('tok-cmt', line.slice(i)); break; }
+    if (line[i] === '/' && line[i + 1] === '*') {
+      const end = line.indexOf('*/', i + 2);
+      const j = end < 0 ? n : end + 2;
+      push('tok-cmt', line.slice(i, j));
+      i = j; continue;
+    }
+    if (line[i] === '"' || line[i] === "'") {
+      const q = line[i];
+      let j = i + 1;
+      while (j < n) {
+        if (line[j] === '\\') { j += 2; continue; }
+        if (line[j] === q) { j++; break; }
+        j++;
+      }
+      push('tok-str', line.slice(i, j));
+      i = j; continue;
+    }
+    if (line[i] === '#' && !line.slice(0, i).trim()) { push('tok-pp', line.slice(i)); break; }
+    if (/[A-Za-z_]/.test(line[i])) {
+      let j = i + 1;
+      while (j < n && /[A-Za-z0-9_]/.test(line[j])) j++;
+      const w = line.slice(i, j);
+      push(KW.test(w) ? 'tok-kw' : '', w);
+      i = j; continue;
+    }
+    if (/[0-9]/.test(line[i])) {
+      let j = i + 1;
+      while (j < n && /[0-9a-fA-FxXlLuU.]/.test(line[j])) j++;
+      push('tok-num', line.slice(i, j));
+      i = j; continue;
+    }
+    out += escapeHtml(line[i]);
+    i++;
+  }
+  return out || ' ';
+}
+const lineEls = [];
+if (hasCode) {
+  const box = $('code');
+  codeLines.forEach((text, i) => {
+    const row = document.createElement('div');
+    row.className = 'ln';
+    const num = document.createElement('b');
+    num.textContent = String(i + 1);
+    const span = document.createElement('span');
+    span.innerHTML = highlightCpp(text === '' ? ' ' : text);
+    row.appendChild(num); row.appendChild(span);
+    box.appendChild(row); lineEls.push(row);
+  });
+  $('codeFile').textContent = (META && META.file) || 'code.cpp';
+  $('codeLang').textContent = (META && META.lang) || 'cpp';
+  $('codeLines').textContent = codeLines.length + ' 行';
+} else {
+  $('codeWrap').style.display = 'none';
+  $('main').classList.remove('has-code');
+}
+let codeOpen = hasCode;
+if (hasCode) {
+  $('btnToggleCode').onclick = () => {
+    codeOpen = !codeOpen;
+    $('codeWrap').classList.toggle('collapsed', !codeOpen);
+    $('main').classList.toggle('has-code', codeOpen);
+    $('btnToggleCode').textContent = codeOpen ? '收起' : '展开';
+  };
+  let copiedTimer = 0;
+  $('btnCopyCode').onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(codeSrcText);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = codeSrcText;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    $('btnCopyCode').textContent = '已复制';
+    $('btnCopyCode').classList.add('copied');
+    clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(() => {
+      $('btnCopyCode').textContent = '复制';
+      $('btnCopyCode').classList.remove('copied');
+    }, 1600);
+  };
+}
+function highlight(lines) {
+  if (!hasCode) return;
+  lineEls.forEach((el) => el.classList.remove('hl'));
+  const hit = (lines || []).filter((n) => n >= 1 && n <= lineEls.length);
+  hit.forEach((n) => lineEls[n - 1].classList.add('hl'));
+  if (!hit.length) return;
+  const box = $('code'), first = lineEls[hit[0] - 1], last = lineEls[hit[hit.length - 1] - 1];
+  if (first.offsetTop < box.scrollTop) box.scrollTop = Math.max(0, first.offsetTop - 8);
+  else if (last.offsetTop + last.offsetHeight > box.scrollTop + box.clientHeight) {
+    box.scrollTop = last.offsetTop + last.offsetHeight - box.clientHeight + 8;
+  }
+}
+
+function setError(msg) { $('error').textContent = msg || ''; }
+function stop() { if (timer) { clearInterval(timer); timer = null; } $('btnPlay').textContent = '播放'; }
+function show(i) {
+  if (!frames.length) return;
+  idx = Math.max(0, Math.min(frames.length - 1, i));
+  const f = frames[idx];
+  $('note').textContent = f.note || '';
+  render(f, $('stage'), data);
+  highlight(f.lines);
+  $('stepInfo').textContent = (idx + 1) + ' / ' + frames.length;
+  $('progress').value = String(idx);
+}
+function play() {
+  if (!frames.length) return;
+  if (idx >= frames.length - 1) show(0);
+  stop();
+  $('btnPlay').textContent = '暂停';
+  const delay = 1100 - Number($('speed').value) * 100;
+  timer = setInterval(() => {
+    if (idx >= frames.length - 1) { stop(); return; }
+    show(idx + 1);
+  }, delay);
+}
+function load(text) {
+  stop(); setError('');
+  try {
+    const parsed = parseInput(text);
+    const built = buildFrames(parsed);
+    if (!built.length) throw new Error('没有可演示的步骤');
+    if (built.length > MAX_FRAMES) throw new Error('步骤过多（' + built.length + '），请缩小输入规模');
+    data = parsed; frames = built;
+    $('progress').max = String(frames.length - 1);
+    show(0);
+  } catch (e) {
+    setError(e && e.message ? e.message : String(e));
+  }
+}
+
+$('title').textContent = META.title;
+document.title = META.title + ' · 算法可视化';
+$('complexity').textContent = META.complexity;
+$('hint').textContent = META.inputHint;
+$('legend').innerHTML = META.legend.map((x) => '<span><i style="background:' + x.color + '"></i>' + x.text + '</span>').join('');
+$('input').value = DEFAULT_INPUT;
+
+$('btnPlay').onclick = () => (timer ? stop() : play());
+$('btnNext').onclick = () => { stop(); show(idx + 1); };
+$('btnPrev').onclick = () => { stop(); show(idx - 1); };
+$('btnReset').onclick = () => { stop(); show(0); };
+$('progress').oninput = (e) => { stop(); show(Number(e.target.value)); };
+$('speed').oninput = () => { if (timer) play(); };
+$('btnApply').onclick = () => load($('input').value);
+$('btnRandom').onclick = () => { $('input').value = randomInput(); load($('input').value); };
+
+document.addEventListener('keydown', (e) => {
+  if (e.target && /^(TEXTAREA|INPUT)$/.test(e.target.tagName) && e.target.type !== 'range') return;
+  if (e.code === 'Space') { e.preventDefault(); timer ? stop() : play(); }
+  else if (e.code === 'ArrowRight') { stop(); show(idx + 1); }
+  else if (e.code === 'ArrowLeft') { stop(); show(idx - 1); }
+  else if (e.code === 'Home') { stop(); show(0); }
+});
+
+window.addEventListener('message', (e) => {
+  const m = e.data;
+  if (!m || m.type !== 'xcpc-theme') return;
+  document.documentElement.dataset.theme = m.dark ? 'dark' : 'light';
+  if (typeof m.hue === 'number') {
+    document.documentElement.style.setProperty('--hue', String(m.hue));
+    document.documentElement.style.setProperty('--accent', 'hsl(' + m.hue + ', 55%, ' + (m.dark ? 55 : 40) + '%)');
+  }
+});
+if (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) {
+  document.documentElement.dataset.theme = 'dark';
+}
+
+load(DEFAULT_INPUT);
+</script>
+</body>
+</html>

@@ -1,0 +1,685 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>算法可视化</title>
+<style>
+:root {
+  --hue: 160;
+  --bg: #f6f5f2; --surface: #ffffff; --text: #1f1d1a; --faint: #7a766f; --border: #e0ddd6;
+  --hl: rgba(37, 99, 235, .14); --accent: hsl(var(--hue), 60%, 40%); --warn: #d97706; --ok: #16a34a; --bad: #dc2626; --info: #2563eb;
+  --code-bg: #1c1a17; --code-bg-head: #26231f; --code-border: #35302a; --code-text: #e6e1d6; --code-ln: #6d675c;
+  --code-comment: #7d7a68; --code-string: #d9a35f; --code-number: #c98fc0; --code-preproc: #86b8b1;
+  --code-kw: hsl(var(--hue), 72%, 68%);
+}
+:root[data-theme="dark"] {
+  --bg: #191816; --surface: #23211e; --text: #ece9e3; --faint: #9a958c; --border: #37342f;
+  --hl: rgba(96, 165, 250, .22); --accent: hsl(var(--hue), 55%, 55%); --warn: #f59e0b; --ok: #4ade80; --bad: #f87171; --info: #60a5fa;
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: 16px; background: var(--bg); color: var(--text);
+  font: 14px/1.6 system-ui, -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; margin-bottom: 12px; }
+h1 { font-size: 18px; margin: 0; }
+.chip { font-size: 12px; color: var(--faint); border: 1px solid var(--border); border-radius: 999px; padding: 0 10px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 12px; }
+#stage { min-height: 220px; overflow: auto; }
+.main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+@media (min-width: 900px) { .main.has-code { grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); } }
+#codeWrap { min-width: 0; display: flex; flex-direction: column; background: var(--code-bg);
+  border: 1px solid var(--code-border); border-radius: 8px; overflow: hidden; color: var(--code-text); }
+.code-head { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 9px 12px; background: var(--code-bg-head); border-bottom: 1px solid var(--code-border); flex: none; }
+.code-status { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.status-led { width: 8px; height: 8px; border-radius: 50%; background: hsl(var(--hue), 72%, 62%); flex: none;
+  animation: led-pulse 2.2s ease-out infinite; }
+@keyframes led-pulse {
+  0% { box-shadow: 0 0 0 0 hsl(var(--hue), 72%, 62%, .45); }
+  70% { box-shadow: 0 0 0 7px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.code-file { font: 12px/1.4 ui-monospace, Consolas, "Cascadia Mono", monospace; color: var(--code-text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.code-lang { font: 10.5px/1.4 ui-monospace, Consolas, monospace; color: var(--code-ln);
+  border: 1px solid var(--code-border); border-radius: 4px; padding: 1px 6px; }
+.code-lines { font: 11px/1.4 ui-monospace, Consolas, monospace; color: var(--code-ln); }
+.code-actions { display: flex; gap: 6px; flex: none; }
+#codeWrap.collapsed #code { display: none; }
+#codeWrap.collapsed .code-head { border-bottom: none; }
+#codeWrap .copy-btn { display: inline-flex; align-items: center; height: 26px; padding: 0 10px;
+  border: 1px solid var(--code-border); border-radius: 6px; background: transparent; color: var(--code-text);
+  font-size: 12px; min-height: 26px; }
+#codeWrap .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+#codeWrap .copy-btn.copied { border-color: var(--accent); color: var(--accent); background: hsl(var(--hue), 60%, 40%, .12); }
+#code { max-height: 440px; overflow: auto; position: relative; background: var(--code-bg); padding: 8px 0 16px;
+  font: 13px/1.7 ui-monospace, Consolas, "Cascadia Mono", monospace; color: var(--code-text); }
+.ln { display: flex; white-space: pre; border-left: 3px solid transparent; padding-right: 16px; }
+.ln b { flex: none; width: 3.2em; text-align: right; padding-right: 12px; color: var(--code-ln); font-weight: 400; user-select: none; font-size: 11px; }
+.ln.hl { background: rgb(255 255 255 / 0.06); border-left-color: var(--accent); }
+.ln.hl b { color: var(--accent); }
+.tok-kw { color: var(--code-kw); }
+.tok-str { color: var(--code-string); }
+.tok-num { color: var(--code-number); }
+.tok-cmt { color: var(--code-comment); font-style: italic; }
+.tok-pp { color: var(--code-preproc); }
+#note { min-height: 24px; font-weight: 600; }
+#legend { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--faint); font-size: 12px; margin-top: 8px; }
+#legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.card.controls { position: sticky; top: 0; z-index: 20; }
+button { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 4px 12px; min-height: 32px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+input[type=range] { accent-color: var(--accent); }
+#progress { flex: 1 1 200px; min-width: 120px; }
+textarea { width: 100%; min-height: 60px; font: 13px/1.5 ui-monospace, Consolas, monospace; color: var(--text);
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px; resize: vertical; }
+#error { color: var(--bad); min-height: 20px; font-size: 13px; }
+footer { color: var(--faint); font-size: 12px; }
+
+/* --- 以下仅供 render 使用的样式（DP 系列） --- */
+.items-box { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.item-chip { font-size: 12px; border: 1px solid var(--border); border-radius: 999px; padding: 1px 10px; color: var(--faint); }
+.item-chip.on { border: 2px solid var(--accent); color: var(--text); font-weight: 700; }
+.item-chip.done { border: 2px solid var(--ok); color: var(--text); }
+.plist { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.pchip { font-size: 12px; border: 1px dashed var(--border); border-radius: 6px; padding: 1px 8px; color: var(--faint); font-family: ui-monospace, Consolas, monospace; }
+.pchip.on { border: 2px solid var(--accent); color: var(--text); font-weight: 700; }
+.sub-line { margin-bottom: 6px; font-size: 12px; color: var(--faint); }
+.dp-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(44px, 1fr)); gap: 6px; }
+.dp-cell { min-width: 0; text-align: center; border-radius: 8px; padding: 3px 4px 5px; background: var(--surface); overflow: hidden; }
+.dp-idx { font-size: 11px; color: var(--faint); }
+.dp-val { font-size: 16px; font-weight: 700; line-height: 1.3; }
+.dp-tag { font-size: 10px; min-height: 14px; color: var(--faint); white-space: nowrap; }
+.eq-line { margin-top: 12px; font: 13px/1.7 ui-monospace, Consolas, monospace; color: var(--text); }
+.tbl { display: grid; gap: 3px; margin-bottom: 4px; }
+.tc { text-align: center; border-radius: 5px; padding: 1px 2px; background: var(--surface); border: 1px solid var(--border); font-size: 12px; line-height: 1.6; }
+.tc.dim { color: var(--faint); background: var(--bg); }
+.tc.sm { font-size: 11px; }
+.rl { text-align: right; font-size: 11px; color: var(--faint); padding-right: 4px; align-self: center; }
+.hd { text-align: center; font-size: 10px; color: var(--faint); }
+.strip { display: grid; grid-auto-flow: column; gap: 4px; margin-bottom: 8px; }
+.strip .b { text-align: center; border: 1px solid var(--border); border-radius: 4px; padding: 2px 0; font: 12px/1.4 ui-monospace, Consolas, monospace; background: var(--surface); color: var(--faint); }
+.strip .b.on { border: 2px solid var(--accent); color: var(--text); font-weight: 700; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title"></h1>
+  <span class="chip" id="complexity"></span>
+  <span class="chip" id="stepInfo">0 / 0</span>
+</header>
+
+<div class="card controls" role="group" aria-label="播放控制">
+  <button id="btnReset" title="重置 (Home)">重置</button>
+  <button id="btnPrev" title="上一步 (←)">上一步</button>
+  <button id="btnPlay" class="primary" title="播放 / 暂停 (空格)">播放</button>
+  <button id="btnNext" title="下一步 (→)">下一步</button>
+  <input id="progress" type="range" min="0" max="0" value="0" aria-label="进度">
+  <label>速度 <input id="speed" type="range" min="1" max="10" value="5" aria-label="速度"></label>
+</div>
+
+<div class="card main has-code" id="main">
+  <div class="viz">
+    <div id="note" aria-live="polite"></div>
+    <div id="stage"></div>
+    <div id="legend"></div>
+  </div>
+  <aside id="codeWrap">
+    <div class="code-head">
+      <div class="code-status">
+        <span class="status-led" aria-hidden="true"></span>
+        <span class="code-file" id="codeFile">code.cpp</span>
+        <span class="code-lang" id="codeLang">cpp</span>
+        <span class="code-lines" id="codeLines"></span>
+      </div>
+      <div class="code-actions">
+        <button type="button" class="copy-btn" id="btnCopyCode">复制</button>
+        <button type="button" class="copy-btn" id="btnToggleCode">收起</button>
+      </div>
+    </div>
+    <div id="code" role="region" aria-label="模板代码"></div>
+  </aside>
+</div>
+
+<div class="card">
+  <label for="input"><b>输入数据</b></label>
+  <textarea id="input" spellcheck="false"></textarea>
+  <div class="controls" style="margin-top:8px">
+    <button id="btnApply">应用输入</button>
+    <button id="btnRandom">随机生成</button>
+    <span id="hint" class="chip"></span>
+  </div>
+  <div id="error" role="alert"></div>
+</div>
+
+<footer>教学演示，以模板代码为准。快捷键：空格 播放/暂停，← → 单步，Home 重置。</footer>
+
+<script type="text/plain" id="code-src">
+int sz, last; //sz 是最后建出的节点编号（0、1 是根），last 是当前前缀的最长回文后缀
+int len[maxn], fail[maxn], nxt[maxn][26], cnt[maxn]; //cnt 建完后 = 该回文串的出现次数
+string s;
+
+void pam_init()
+{
+	sz = 1;
+	len[0] = 0; fail[0] = 1; //0 号偶根：长度 0，fail 指向奇根
+	len[1] = -1; fail[1] = 1; //1 号奇根：长度 -1，让单字符也能套同一个扩展公式
+	memset(nxt[0], 0, sizeof(nxt[0]));
+	memset(nxt[1], 0, sizeof(nxt[1]));
+	last = 0;
+}
+
+// 从 u 沿 fail 往上找，返回第一个能在两边接上 s[pos] 的回文后缀
+// 奇根 len = -1，条件 pos - len[u] - 1 >= 0 恒成立，所以循环一定停得下来
+int getfail(int u, int pos)
+{
+	while(pos - len[u] - 1 < 0 || s[pos - len[u] - 1] != s[pos]) u = fail[u];
+	return u;
+}
+
+void add(int pos)
+{
+	int c = s[pos] - 'a';
+	int cur = getfail(last, pos);
+	if(!nxt[cur][c]) //这种回文串第一次出现才建新点
+	{
+		int now = ++ sz;
+		len[now] = len[cur] + 2;
+		memset(nxt[now], 0, sizeof(nxt[now]));
+		if(len[now] == 1) fail[now] = 0; //单字符的最长真回文后缀是空串，即偶根
+		else fail[now] = nxt[getfail(fail[cur], pos)][c]; //接在 cur 的最长真回文后缀上
+		nxt[cur][c] = now;
+	}
+	last = nxt[cur][c];
+	cnt[last] ++; //这里只给"当前最长回文后缀"计 1，更短的出现在后面靠 fail 树累加
+}
+
+// 两种 cnt 语义：建树时的 cnt 是"以该回文串结尾的前缀个数"；沿 fail 树逆序累加后才是出现次数
+// 不用建 fail 树：fail 一定指向更早创建的节点，所以编号从大到小就是 fail 树自底向上的顺序
+void count_occurrences()
+{
+	for(int u = sz; u >= 2; u --) cnt[fail[u]] += cnt[u];
+}
+
+int main()
+{
+	ios::sync_with_stdio(false);
+	cin.tie(0); cout.tie(0);
+	
+	cin >> s;
+	pam_init();
+	for(int i = 0; i < (int)s.size(); i ++) add(i);
+	
+	int mx = 0; //最长回文子串长度
+	for(int i = 2; i <= sz; i ++) mx = max(mx, len[i]);
+	count_occurrences();
+	ll tot = 0; //回文子串总数（按区间计），全同字符时约 n^2/2 = 5e11，必须 ll
+	for(int i = 2; i <= sz; i ++) tot += cnt[i];
+</script>
+
+<script>
+
+  //只调用,不要改写
+  function layoutCircle(n, cx, cy, r) {
+  return Array.from({ length: n }, (_, i) => {
+    const a = -Math.PI / 2 + (2 * Math.PI * i) / n;
+    return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
+  });
+}
+
+function layoutBinary(root, left, right, dx = 44, dy = 60) {
+  const pos = {};
+  let k = 0;
+  (function dfs(u, d) {
+    if (u == null) return;
+    dfs(left[u], d + 1);
+    pos[u] = { x: k++ * dx, y: d * dy };
+    dfs(right[u], d + 1);
+  })(root, 0);
+  return pos;
+}
+
+function layoutTree(root, children, dx = 48, dy = 64) {
+  const pos = {};
+  let leaf = 0;
+  (function dfs(u, d) {
+    const cs = children[u] || [];
+    if (cs.length === 0) { pos[u] = { x: leaf++ * dx, y: d * dy }; return; }
+    cs.forEach((c) => dfs(c, d + 1));
+    pos[u] = { x: (pos[cs[0]].x + pos[cs[cs.length - 1]].x) / 2, y: d * dy };
+  })(root, 0);
+  return pos;
+}
+
+function edgeSvg(a, b, o = {}) {
+  const { r = 18, directed = false, color = 'var(--faint)', width = 2, dash = '' } = o;
+  const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len;
+  const x1 = a.x + ux * r, y1 = a.y + uy * r, x2 = b.x - ux * r, y2 = b.y - uy * r;
+  let s = '<line x1="' + x1 + '" y1="' + y1 + '" x2="' + x2 + '" y2="' + y2 + '" stroke="' + color +
+    '" stroke-width="' + width + '"' + (dash ? ' stroke-dasharray="' + dash + '"' : '') + '/>';
+  if (directed) {
+    const hx = x2 - ux * 9, hy = y2 - uy * 9;
+    s += '<polygon points="' + x2 + ',' + y2 + ' ' + (hx - uy * 5) + ',' + (hy + ux * 5) + ' ' +
+      (hx + uy * 5) + ',' + (hy - ux * 5) + '" fill="' + color + '"/>';
+  }
+  return s;
+}
+
+function svgBox(points, pad = 30) {
+  const xs = points.map((p) => p.x), ys = points.map((p) => p.y);
+  const x0 = Math.min(...xs) - pad, y0 = Math.min(...ys) - pad;
+  return x0 + ' ' + y0 + ' ' + (Math.max(...xs) + pad - x0) + ' ' + (Math.max(...ys) + pad - y0);
+}
+
+function textSvg(x, y, text, o = {}) {
+  const { size = 12, weight = 400, fill = 'var(--text)', anchor = 'middle' } = o;
+  return '<text x="' + x + '" y="' + y + '" font-size="' + size + '" font-weight="' + weight + '" text-anchor="' + anchor +
+    '" fill="' + fill + '" stroke="var(--surface)" stroke-width="3" paint-order="stroke" stroke-linejoin="round">' + text + '</text>';
+}
+/* === ALGO START：回文自动机 PAM === */
+const META = {
+  title: '回文自动机 PAM：本质不同回文串与出现次数',
+  complexity: '建机 O(|s|)（fail 跳转均摊）　统计 O(状态数)',
+  inputHint: '一行小写字母串（长度 <= 8）',
+  file: '回文自动机.cpp',
+  lang: 'cpp',
+  legend: [
+    { color: 'var(--info)', text: 'nxt 转移边（带字符）' },
+    { color: 'var(--accent)', text: '当前 add 的节点 / 正在处理的字符' },
+    { color: 'var(--warn)', text: 'getfail 跳转路径与 fail 指针（虚线）' },
+    { color: 'var(--ok)', text: '新建节点 / 最终答案' },
+    { color: 'var(--border)', text: '两个根与普通状态' },
+  ],
+};
+const MAX_N = 8;
+const DEFAULT_INPUT = 'ababa';
+
+function parseInput(text) {
+  if (!text.trim()) throw new Error('请输入一行小写字母串');
+  const s = text.trim();
+  if (!/^[a-z]+$/.test(s)) throw new Error('只允许小写字母');
+  if (s.length > MAX_N) throw new Error('串长需 <= ' + MAX_N + '（演示规模）');
+  return { s };
+}
+
+function randomInput() {
+  const n = 4 + Math.floor(Math.random() * 5);
+  let s = '';
+  for (let i = 0; i < n; i++) s += 'abc'[Math.floor(Math.random() * 3)];
+  return s;
+}
+
+function buildFrames({ s }) {
+  const frames = [];
+  const maxS = s.length + 5;
+  const len = new Array(maxS).fill(0);
+  const fail = new Array(maxS).fill(0);
+  const cnt = new Array(maxS).fill(0);
+  const nxt = Array.from({ length: maxS }, () => ({}));
+  let sz = 0, last = 0;
+  let mx = 0, tot = 0, pos = -1, cur = -1, now = -1, gu = -1;
+
+  function states() {
+    const r = [];
+    for (let id = 0; id <= sz; id++) r.push({ id, len: len[id], fail: fail[id], cnt: cnt[id] });
+    return r;
+  }
+  function edges() {
+    const r = [];
+    for (let id = 0; id <= sz; id++) {
+      for (const ch of Object.keys(nxt[id])) r.push({ u: id, v: nxt[id][ch], c: ch });
+    }
+    return r;
+  }
+  const snap = (f) => frames.push(Object.assign({
+    note: '', lines: [5], phase: 'init', s: s.split(''), sz, last, pos, cur, now, gu,
+    states: states(), edges: edges(), mx, tot, ans: 0,
+  }, f));
+
+  sz = 1;
+  len[0] = 0; fail[0] = 1;
+  len[1] = -1; fail[1] = 1;
+  last = 0;
+  snap({ note: 'pam_init：sz = 1，0 号偶根 len = 0，1 号奇根 len = -1，last = 0', lines: [7, 8, 9, 12], phase: 'init', last });
+
+  function getfail(u, p) {
+    while (p - len[u] - 1 < 0 || s[p - len[u] - 1] !== s[p]) {
+      snap({
+        note: 'getfail：u = ' + u + '，pos - len[u] - 1 = ' + (p - len[u] - 1) + '，' +
+          (p - len[u] - 1 < 0 ? '越界' : 's[' + (p - len[u] - 1) + '] = ' + s[p - len[u] - 1] + ' != s[' + p + '] = ' + s[p]) +
+          ' → u = fail[u] = ' + fail[u],
+        lines: [19], phase: 'getfail', u, gu: fail[u], pos: p,
+      });
+      u = fail[u];
+    }
+    snap({ note: 'getfail 返回 u = ' + u + (u === 1 ? '（奇根 len = -1，条件恒成立）' : '（两端能接上 ' + s[p] + '）'), lines: [19, 20], phase: 'getfail', u, gu: u, pos: p });
+    return u;
+  }
+
+  for (let p = 0; p < s.length; p++) {
+    pos = p;
+    const c = s[p];
+    snap({ note: 'add(' + p + ')：字符 ' + c + '，last = ' + last + '，先 cur = getfail(last, pos)', lines: [23, 25, 26], phase: 'add', pos: p, c, cur: -1, now: -1 });
+    const cf = getfail(last, p);
+    cur = cf;
+    snap({ note: 'cur = getfail(last, pos) = ' + cur + '，看 nxt[cur][' + c + '] 是否已存在', lines: [26, 27], phase: 'add', cur, pos: p, c, now: -1 });
+    if (!nxt[cur][c]) {
+      now = ++sz;
+      len[now] = len[cur] + 2;
+      snap({ note: 'nxt[' + cur + '][' + c + '] 为空：now = ++sz = ' + now + '，len[now] = len[cur]+2 = ' + len[now], lines: [29, 30], phase: 'new', cur, now, pos: p, c });
+      if (len[now] === 1) {
+        fail[now] = 0;
+        snap({ note: 'len[now] == 1：单字符回文串的最长真回文后缀是空串 → fail[now] = 0', lines: [32], phase: 'new', cur, now, pos: p, c });
+      } else {
+        snap({ note: 'len[now] != 1：fail[now] = nxt[getfail(fail[cur], pos)][c]，先对 fail[cur] = ' + fail[cur] + ' 求 getfail', lines: [33], phase: 'new', cur, now, pos: p, c });
+        const gf = getfail(fail[cur], p);
+        fail[now] = nxt[gf][c];
+        snap({ note: 'getfail(fail[cur], pos) = ' + gf + '，fail[now] = nxt[' + gf + '][' + c + '] = ' + fail[now], lines: [33], phase: 'new', cur, now, gu: gf, pos: p, c });
+      }
+      nxt[cur][c] = now;
+      snap({ note: 'nxt[' + cur + '][' + c + '] = now = ' + now + '，新回文串首次出现', lines: [34], phase: 'new', cur, now, pos: p, c });
+    }
+    last = nxt[cur][c];
+    cnt[last]++;
+    snap({ note: 'last = nxt[cur][c] = ' + last + '，cnt[last]++ → ' + cnt[last] + '（只给当前最长回文后缀计 1）', lines: [36, 37], phase: 'add', cur, now, last, pos: p, c });
+  }
+
+  snap({ note: '建机完成：sz = ' + sz + '（含两个根），本质不同回文串 = sz-1 = ' + (sz - 1), lines: [42, 44], phase: 'count' });
+  for (let u = sz; u >= 2; u--) {
+    cnt[fail[u]] += cnt[u];
+    snap({ note: '倒序累加：cnt[fail[' + u + ']=' + fail[u] + '] += cnt[' + u + '] = ' + cnt[u] + ' → ' + cnt[fail[u]], lines: [44], phase: 'count', u });
+  }
+  snap({ note: 'fail 树累加完成，cnt[i] 就是回文串 i 的出现次数', lines: [44, 45], phase: 'count' });
+
+  for (let u = 2; u <= sz; u++) mx = Math.max(mx, len[u]);
+  for (let u = 2; u <= sz; u++) tot += cnt[u];
+  snap({ note: '最长回文子串长度 mx = ' + mx + '；回文子串总数 tot = Σcnt = ' + tot, lines: [56, 57, 59, 60], phase: 'done', mx, tot, ans: mx });
+  return frames;
+}
+
+function render(frame, stage, data) {
+  stage.innerHTML = '';
+  const box = document.createElement('div');
+  const sub = document.createElement('div');
+  sub.className = 'sub-line';
+  sub.textContent = '串 s = ' + data.s + '　节点数 sz = ' + frame.sz + '（不含两个根另有 ' + Math.max(0, frame.sz - 1) + ' 个回文串）' +
+    (frame.phase === 'done' ? '　mx = ' + frame.mx + '，tot = ' + frame.tot : '');
+  box.appendChild(sub);
+
+  const row = document.createElement('div');
+  row.className = 'strip';
+  for (let i = 0; i < data.s.length; i++) {
+    const c = document.createElement('div');
+    c.className = 'b' + (frame.pos === i ? ' on' : '');
+    c.textContent = data.s[i];
+    c.style.maxWidth = '26px';
+    row.appendChild(c);
+  }
+  box.appendChild(row);
+
+  const byLen = {};
+  frame.states.forEach((st) => { (byLen[st.len] = byLen[st.len] || []).push(st); });
+  const pos = {};
+  Object.keys(byLen).forEach((k) => {
+    byLen[k].forEach((st, idx) => {
+      pos[st.id] = { x: 34 + (Number(k) + 1) * 48, y: 34 + idx * 52 };
+    });
+  });
+  const maxY = Math.max(60, ...Object.keys(pos).map((id) => pos[id].y));
+  const W = 460, H = maxY + 44;
+
+  let svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;max-width:480px" role="img">';
+  svg += '<rect x="0" y="0" width="' + W + '" height="' + H + '" fill="var(--surface)"/>';
+  frame.states.forEach((st) => {
+    if (st.id === 0 || st.id === 1) return;
+    const A = pos[st.id], B = pos[st.fail];
+    if (!A || !B) return;
+    svg += '<line x1="' + A.x + '" y1="' + A.y + '" x2="' + B.x + '" y2="' + B.y + '" stroke="var(--warn)" stroke-width="1.6" stroke-dasharray="4 3" opacity="0.8"/>';
+  });
+  frame.edges.forEach((e) => {
+    const A = pos[e.u], B = pos[e.v];
+    if (!A || !B) return;
+    const dx = B.x - A.x, dy = B.y - A.y, d = Math.hypot(dx, dy) || 1;
+    const x1 = A.x + dx / d * 15, y1 = A.y + dy / d * 15, x2 = B.x - dx / d * 17, y2 = B.y - dy / d * 17;
+    svg += '<line x1="' + x1 + '" y1="' + y1 + '" x2="' + x2 + '" y2="' + y2 + '" stroke="var(--info)" stroke-width="1.4" opacity="0.7"/>';
+    svg += '<polygon points="' + x2 + ',' + y2 + ' ' + (x2 - dx / d * 7 - dy / d * 4) + ',' + (y2 - dy / d * 7 + dx / d * 4) + ' ' + (x2 - dx / d * 7 + dy / d * 4) + ',' + (y2 - dy / d * 7 - dx / d * 4) + '" fill="var(--info)"/>';
+    svg += '<text x="' + ((x1 + x2) / 2) + '" y="' + ((y1 + y2) / 2 - 3) + '" font-size="11" text-anchor="middle" fill="var(--text)">' + e.c + '</text>';
+  });
+  frame.states.forEach((st) => {
+    const P = pos[st.id];
+    let stroke = 'var(--border)', width = 2, dash = '';
+    if (st.id === frame.now) stroke = 'var(--ok)';
+    else if (st.id === frame.cur || st.id === frame.u) stroke = 'var(--accent)';
+    else if (st.id === frame.gu) stroke = 'var(--warn)';
+    if (st.id === 0 || st.id === 1) { stroke = 'var(--faint)'; dash = 'stroke-dasharray="3 2"'; }
+    svg += '<circle cx="' + P.x + '" cy="' + P.y + '" r="15" fill="var(--surface)" stroke="' + stroke + '" stroke-width="' + width + '" ' + dash + '/>';
+    svg += '<text x="' + P.x + '" y="' + (P.y + 4) + '" font-size="11" text-anchor="middle" fill="var(--text)">' + st.id + '</text>';
+    svg += '<text x="' + P.x + '" y="' + (P.y + 26) + '" font-size="9" text-anchor="middle" fill="var(--faint)">len' + st.len + ' cnt' + st.cnt + '</text>';
+  });
+  svg += '</svg>';
+  const wrap = document.createElement('div');
+  wrap.innerHTML = svg;
+  box.appendChild(wrap);
+
+  const prow = document.createElement('div');
+  prow.className = 'plist';
+  frame.states.forEach((st) => {
+    const c = document.createElement('span');
+    c.className = 'pchip' + (st.id === frame.now ? ' on' : '');
+    c.textContent = st.id + ':len' + st.len + ',fail' + st.fail + ',cnt' + st.cnt;
+    prow.appendChild(c);
+  });
+  box.appendChild(prow);
+
+  const eq = document.createElement('div');
+  eq.className = 'eq-line';
+  if (frame.phase === 'done') eq.textContent = '本质不同回文串 ' + (frame.sz - 1) + ' 个，最长 ' + frame.mx + '，按区间计共 ' + frame.tot + ' 个';
+  else if (frame.cur >= 0 || frame.now >= 0) eq.textContent = 'cur = ' + frame.cur + '，now = ' + frame.now + '，last = ' + frame.last + '（fail 边用虚线画出）';
+  else eq.textContent = '0 号是偶根（len 0），1 号是奇根（len -1）；实线是 nxt 转移，虚线是 fail。';
+  box.appendChild(eq);
+  stage.appendChild(box);
+}
+/* === ALGO END === */
+
+
+/* ---------- 播放器（固定部分，不要修改） ---------- */
+const MAX_FRAMES = 5000;
+const $ = (id) => document.getElementById(id);
+let data = null, frames = [], idx = 0, timer = null;
+
+const codeSrcText = (($('code-src') || {}).textContent || '').replace(/^\r?\n/, '').replace(/\s+$/, '');
+const codeLines = codeSrcText.split(/\r?\n/);
+const hasCode = codeLines.length > 0 && codeLines.join('').trim() !== '';
+const KW = /^(?:alignas|alignof|and|and_eq|asm|auto|bitand|bitor|bool|break|case|catch|char|class|compl|concept|const|consteval|constexpr|constinit|continue|decltype|default|delete|do|double|else|enum|explicit|export|extern|false|float|for|friend|goto|if|inline|int|long|mutable|namespace|new|noexcept|not|not_eq|nullptr|operator|or|or_eq|private|protected|public|register|requires|return|short|signed|sizeof|static|static_assert|struct|switch|template|this|throw|true|try|typedef|typeid|typename|union|unsigned|using|virtual|void|volatile|wchar_t|while|xor|xor_eq|ll|ull|i64|u64|vector|string|map|set|queue|stack|pair|cin|cout|endl)$/;
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function highlightCpp(line) {
+  let i = 0, out = '', n = line.length;
+  const push = (cls, text) => {
+    const t = escapeHtml(text);
+    out += cls ? '<span class="' + cls + '">' + t + '</span>' : t;
+  };
+  while (i < n) {
+    if (line[i] === '/' && line[i + 1] === '/') { push('tok-cmt', line.slice(i)); break; }
+    if (line[i] === '/' && line[i + 1] === '*') {
+      const end = line.indexOf('*/', i + 2);
+      const j = end < 0 ? n : end + 2;
+      push('tok-cmt', line.slice(i, j));
+      i = j; continue;
+    }
+    if (line[i] === '"' || line[i] === "'") {
+      const q = line[i];
+      let j = i + 1;
+      while (j < n) {
+        if (line[j] === '\\') { j += 2; continue; }
+        if (line[j] === q) { j++; break; }
+        j++;
+      }
+      push('tok-str', line.slice(i, j));
+      i = j; continue;
+    }
+    if (line[i] === '#' && !line.slice(0, i).trim()) { push('tok-pp', line.slice(i)); break; }
+    if (/[A-Za-z_]/.test(line[i])) {
+      let j = i + 1;
+      while (j < n && /[A-Za-z0-9_]/.test(line[j])) j++;
+      const w = line.slice(i, j);
+      push(KW.test(w) ? 'tok-kw' : '', w);
+      i = j; continue;
+    }
+    if (/[0-9]/.test(line[i])) {
+      let j = i + 1;
+      while (j < n && /[0-9a-fA-FxXlLuU.]/.test(line[j])) j++;
+      push('tok-num', line.slice(i, j));
+      i = j; continue;
+    }
+    out += escapeHtml(line[i]);
+    i++;
+  }
+  return out || ' ';
+}
+const lineEls = [];
+if (hasCode) {
+  const box = $('code');
+  codeLines.forEach((text, i) => {
+    const row = document.createElement('div');
+    row.className = 'ln';
+    const num = document.createElement('b');
+    num.textContent = String(i + 1);
+    const span = document.createElement('span');
+    span.innerHTML = highlightCpp(text === '' ? ' ' : text);
+    row.appendChild(num); row.appendChild(span);
+    box.appendChild(row); lineEls.push(row);
+  });
+  $('codeFile').textContent = (META && META.file) || 'code.cpp';
+  $('codeLang').textContent = (META && META.lang) || 'cpp';
+  $('codeLines').textContent = codeLines.length + ' 行';
+} else {
+  $('codeWrap').style.display = 'none';
+  $('main').classList.remove('has-code');
+}
+let codeOpen = hasCode;
+if (hasCode) {
+  $('btnToggleCode').onclick = () => {
+    codeOpen = !codeOpen;
+    $('codeWrap').classList.toggle('collapsed', !codeOpen);
+    $('main').classList.toggle('has-code', codeOpen);
+    $('btnToggleCode').textContent = codeOpen ? '收起' : '展开';
+  };
+  let copiedTimer = 0;
+  $('btnCopyCode').onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(codeSrcText);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = codeSrcText;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    $('btnCopyCode').textContent = '已复制';
+    $('btnCopyCode').classList.add('copied');
+    clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(() => {
+      $('btnCopyCode').textContent = '复制';
+      $('btnCopyCode').classList.remove('copied');
+    }, 1600);
+  };
+}
+function highlight(lines) {
+  if (!hasCode) return;
+  lineEls.forEach((el) => el.classList.remove('hl'));
+  const hit = (lines || []).filter((n) => n >= 1 && n <= lineEls.length);
+  hit.forEach((n) => lineEls[n - 1].classList.add('hl'));
+  if (!hit.length) return;
+  const box = $('code'), first = lineEls[hit[0] - 1], last = lineEls[hit[hit.length - 1] - 1];
+  if (first.offsetTop < box.scrollTop) box.scrollTop = Math.max(0, first.offsetTop - 8);
+  else if (last.offsetTop + last.offsetHeight > box.scrollTop + box.clientHeight) {
+    box.scrollTop = last.offsetTop + last.offsetHeight - box.clientHeight + 8;
+  }
+}
+
+function setError(msg) { $('error').textContent = msg || ''; }
+function stop() { if (timer) { clearInterval(timer); timer = null; } $('btnPlay').textContent = '播放'; }
+function show(i) {
+  if (!frames.length) return;
+  idx = Math.max(0, Math.min(frames.length - 1, i));
+  const f = frames[idx];
+  $('note').textContent = f.note || '';
+  render(f, $('stage'), data);
+  highlight(f.lines);
+  $('stepInfo').textContent = (idx + 1) + ' / ' + frames.length;
+  $('progress').value = String(idx);
+}
+function play() {
+  if (!frames.length) return;
+  if (idx >= frames.length - 1) show(0);
+  stop();
+  $('btnPlay').textContent = '暂停';
+  const delay = 1100 - Number($('speed').value) * 100;
+  timer = setInterval(() => {
+    if (idx >= frames.length - 1) { stop(); return; }
+    show(idx + 1);
+  }, delay);
+}
+function load(text) {
+  stop(); setError('');
+  try {
+    const parsed = parseInput(text);
+    const built = buildFrames(parsed);
+    if (!built.length) throw new Error('没有可演示的步骤');
+    if (built.length > MAX_FRAMES) throw new Error('步骤过多（' + built.length + '），请缩小输入规模');
+    data = parsed; frames = built;
+    $('progress').max = String(frames.length - 1);
+    show(0);
+  } catch (e) {
+    setError(e && e.message ? e.message : String(e));
+  }
+}
+
+$('title').textContent = META.title;
+document.title = META.title + ' · 算法可视化';
+$('complexity').textContent = META.complexity;
+$('hint').textContent = META.inputHint;
+$('legend').innerHTML = META.legend.map((x) => '<span><i style="background:' + x.color + '"></i>' + x.text + '</span>').join('');
+$('input').value = DEFAULT_INPUT;
+
+$('btnPlay').onclick = () => (timer ? stop() : play());
+$('btnNext').onclick = () => { stop(); show(idx + 1); };
+$('btnPrev').onclick = () => { stop(); show(idx - 1); };
+$('btnReset').onclick = () => { stop(); show(0); };
+$('progress').oninput = (e) => { stop(); show(Number(e.target.value)); };
+$('speed').oninput = () => { if (timer) play(); };
+$('btnApply').onclick = () => load($('input').value);
+$('btnRandom').onclick = () => { $('input').value = randomInput(); load($('input').value); };
+
+document.addEventListener('keydown', (e) => {
+  if (e.target && /^(TEXTAREA|INPUT)$/.test(e.target.tagName) && e.target.type !== 'range') return;
+  if (e.code === 'Space') { e.preventDefault(); timer ? stop() : play(); }
+  else if (e.code === 'ArrowRight') { stop(); show(idx + 1); }
+  else if (e.code === 'ArrowLeft') { stop(); show(idx - 1); }
+  else if (e.code === 'Home') { stop(); show(0); }
+});
+
+window.addEventListener('message', (e) => {
+  const m = e.data;
+  if (!m || m.type !== 'xcpc-theme') return;
+  document.documentElement.dataset.theme = m.dark ? 'dark' : 'light';
+  if (typeof m.hue === 'number') {
+    document.documentElement.style.setProperty('--hue', String(m.hue));
+    document.documentElement.style.setProperty('--accent', 'hsl(' + m.hue + ', 55%, ' + (m.dark ? 55 : 40) + '%)');
+  }
+});
+if (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) {
+  document.documentElement.dataset.theme = 'dark';
+}
+
+load(DEFAULT_INPUT);
+</script>
+</body>
+</html>

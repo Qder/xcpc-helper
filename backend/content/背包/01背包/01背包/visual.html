@@ -67,6 +67,7 @@ h1 { font-size: 18px; margin: 0; }
 #legend { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--faint); font-size: 12px; margin-top: 8px; }
 #legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
 .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.card.controls { position: sticky; top: 0; z-index: 20; }
 button { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border);
   border-radius: 8px; padding: 4px 12px; min-height: 32px; cursor: pointer; }
 button:hover { border-color: var(--accent); }
@@ -98,6 +99,15 @@ footer { color: var(--faint); font-size: 12px; }
   <span class="chip" id="stepInfo">0 / 0</span>
 </header>
 
+<div class="card controls" role="group" aria-label="播放控制">
+  <button id="btnReset" title="重置 (Home)">重置</button>
+  <button id="btnPrev" title="上一步 (←)">上一步</button>
+  <button id="btnPlay" class="primary" title="播放 / 暂停 (空格)">播放</button>
+  <button id="btnNext" title="下一步 (→)">下一步</button>
+  <input id="progress" type="range" min="0" max="0" value="0" aria-label="进度">
+  <label>速度 <input id="speed" type="range" min="1" max="10" value="5" aria-label="速度"></label>
+</div>
+
 <div class="card main has-code" id="main">
   <div class="viz">
     <div id="note" aria-live="polite"></div>
@@ -119,15 +129,6 @@ footer { color: var(--faint); font-size: 12px; }
     </div>
     <div id="code" role="region" aria-label="模板代码"></div>
   </aside>
-</div>
-
-<div class="card controls" role="group" aria-label="播放控制">
-  <button id="btnReset" title="重置 (Home)">重置</button>
-  <button id="btnPrev" title="上一步 (←)">上一步</button>
-  <button id="btnPlay" class="primary" title="播放 / 暂停 (空格)">播放</button>
-  <button id="btnNext" title="下一步 (→)">下一步</button>
-  <input id="progress" type="range" min="0" max="0" value="0" aria-label="进度">
-  <label>速度 <input id="speed" type="range" min="1" max="10" value="5" aria-label="速度"></label>
 </div>
 
 <div class="card">

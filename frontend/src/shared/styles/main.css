@@ -71,6 +71,13 @@ body,
   margin: 0;
 }
 
+#app > .n-config-provider,
+.n-config-provider,
+.n-message-provider {
+  height: 100%;
+  min-height: 0;
+}
+
 body {
   font-family: var(--font-ui);
   font-size: 14px;
@@ -156,6 +163,14 @@ div.n-base-selection-input {
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+/* 路由页根节点必须吃掉剩余高度；否则内容撑开后被 .app-shell 的
+   overflow:hidden 裁掉，页面自己又没有滚动条。 */
+.page-stage > * {
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
 }
 
 /* ---------------- 侧边导航 ---------------- */

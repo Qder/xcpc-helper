@@ -1,0 +1,754 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>算法可视化</title>
+<style>
+:root {
+  --hue: 160;
+  --bg: #f6f5f2; --surface: #ffffff; --text: #1f1d1a; --faint: #7a766f; --border: #e0ddd6;
+  --hl: rgba(37, 99, 235, .14); --accent: hsl(var(--hue), 60%, 40%); --warn: #d97706; --ok: #16a34a; --bad: #dc2626; --info: #2563eb;
+  --code-bg: #1c1a17; --code-bg-head: #26231f; --code-border: #35302a; --code-text: #e6e1d6; --code-ln: #6d675c;
+  --code-comment: #7d7a68; --code-string: #d9a35f; --code-number: #c98fc0; --code-preproc: #86b8b1;
+  --code-kw: hsl(var(--hue), 72%, 68%);
+}
+:root[data-theme="dark"] {
+  --bg: #191816; --surface: #23211e; --text: #ece9e3; --faint: #9a958c; --border: #37342f;
+  --hl: rgba(96, 165, 250, .22); --accent: hsl(var(--hue), 55%, 55%); --warn: #f59e0b; --ok: #4ade80; --bad: #f87171; --info: #60a5fa;
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: 16px; background: var(--bg); color: var(--text);
+  font: 14px/1.6 system-ui, -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; margin-bottom: 12px; }
+h1 { font-size: 18px; margin: 0; }
+.chip { font-size: 12px; color: var(--faint); border: 1px solid var(--border); border-radius: 999px; padding: 0 10px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 12px; }
+#stage { min-height: 220px; overflow: auto; }
+.main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+@media (min-width: 900px) { .main.has-code { grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); } }
+#codeWrap { min-width: 0; display: flex; flex-direction: column; background: var(--code-bg);
+  border: 1px solid var(--code-border); border-radius: 8px; overflow: hidden; color: var(--code-text); }
+.code-head { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 9px 12px; background: var(--code-bg-head); border-bottom: 1px solid var(--code-border); flex: none; }
+.code-status { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.status-led { width: 8px; height: 8px; border-radius: 50%; background: hsl(var(--hue), 72%, 62%); flex: none;
+  animation: led-pulse 2.2s ease-out infinite; }
+@keyframes led-pulse {
+  0% { box-shadow: 0 0 0 0 hsl(var(--hue), 72%, 62%, .45); }
+  70% { box-shadow: 0 0 0 7px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.code-file { font: 12px/1.4 ui-monospace, Consolas, "Cascadia Mono", monospace; color: var(--code-text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.code-lang { font: 10.5px/1.4 ui-monospace, Consolas, monospace; color: var(--code-ln);
+  border: 1px solid var(--code-border); border-radius: 4px; padding: 1px 6px; }
+.code-lines { font: 11px/1.4 ui-monospace, Consolas, monospace; color: var(--code-ln); }
+.code-actions { display: flex; gap: 6px; flex: none; }
+#codeWrap.collapsed #code { display: none; }
+#codeWrap.collapsed .code-head { border-bottom: none; }
+#codeWrap .copy-btn { display: inline-flex; align-items: center; height: 26px; padding: 0 10px;
+  border: 1px solid var(--code-border); border-radius: 6px; background: transparent; color: var(--code-text);
+  font-size: 12px; min-height: 26px; }
+#codeWrap .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+#codeWrap .copy-btn.copied { border-color: var(--accent); color: var(--accent); background: hsl(var(--hue), 60%, 40%, .12); }
+#code { max-height: 440px; overflow: auto; position: relative; background: var(--code-bg); padding: 8px 0 16px;
+  font: 13px/1.7 ui-monospace, Consolas, "Cascadia Mono", monospace; color: var(--code-text); }
+.ln { display: flex; white-space: pre; border-left: 3px solid transparent; padding-right: 16px; }
+.ln b { flex: none; width: 3.2em; text-align: right; padding-right: 12px; color: var(--code-ln); font-weight: 400; user-select: none; font-size: 11px; }
+.ln.hl { background: rgb(255 255 255 / 0.06); border-left-color: var(--accent); }
+.ln.hl b { color: var(--accent); }
+.tok-kw { color: var(--code-kw); }
+.tok-str { color: var(--code-string); }
+.tok-num { color: var(--code-number); }
+.tok-cmt { color: var(--code-comment); font-style: italic; }
+.tok-pp { color: var(--code-preproc); }
+#note { min-height: 24px; font-weight: 600; }
+#legend { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--faint); font-size: 12px; margin-top: 8px; }
+#legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.card.controls { position: sticky; top: 0; z-index: 20; }
+button { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 4px 12px; min-height: 32px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+input[type=range] { accent-color: var(--accent); }
+#progress { flex: 1 1 200px; min-width: 120px; }
+textarea { width: 100%; min-height: 60px; font: 13px/1.5 ui-monospace, Consolas, monospace; color: var(--text);
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px; resize: vertical; }
+#error { color: var(--bad); min-height: 20px; font-size: 13px; }
+footer { color: var(--faint); font-size: 12px; }
+
+/* --- 以下仅供 render 使用的样式（DP 系列） --- */
+.items-box { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.item-chip { font-size: 12px; border: 1px solid var(--border); border-radius: 999px; padding: 1px 10px; color: var(--faint); }
+.item-chip.on { border: 2px solid var(--accent); color: var(--text); font-weight: 700; }
+.item-chip.done { border: 2px solid var(--ok); color: var(--text); }
+.plist { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.pchip { font-size: 12px; border: 1px dashed var(--border); border-radius: 6px; padding: 1px 8px; color: var(--faint); font-family: ui-monospace, Consolas, monospace; }
+.pchip.on { border: 2px solid var(--accent); color: var(--text); font-weight: 700; }
+.sub-line { margin-bottom: 6px; font-size: 12px; color: var(--faint); }
+.dp-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(44px, 1fr)); gap: 6px; }
+.dp-cell { min-width: 0; text-align: center; border-radius: 8px; padding: 3px 4px 5px; background: var(--surface); overflow: hidden; }
+.dp-idx { font-size: 11px; color: var(--faint); }
+.dp-val { font-size: 16px; font-weight: 700; line-height: 1.3; }
+.dp-tag { font-size: 10px; min-height: 14px; color: var(--faint); white-space: nowrap; }
+.eq-line { margin-top: 12px; font: 13px/1.7 ui-monospace, Consolas, monospace; color: var(--text); }
+.tbl { display: grid; gap: 3px; margin-bottom: 4px; }
+.tc { text-align: center; border-radius: 5px; padding: 1px 2px; background: var(--surface); border: 1px solid var(--border); font-size: 12px; line-height: 1.6; }
+.tc.dim { color: var(--faint); background: var(--bg); }
+.tc.sm { font-size: 11px; }
+.rl { text-align: right; font-size: 11px; color: var(--faint); padding-right: 4px; align-self: center; }
+.hd { text-align: center; font-size: 10px; color: var(--faint); }
+.strip { display: grid; grid-auto-flow: column; gap: 4px; margin-bottom: 8px; }
+.strip .b { text-align: center; border: 1px solid var(--border); border-radius: 4px; padding: 2px 0; font: 12px/1.4 ui-monospace, Consolas, monospace; background: var(--surface); color: var(--faint); }
+.strip .b.on { border: 2px solid var(--accent); color: var(--text); font-weight: 700; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title"></h1>
+  <span class="chip" id="complexity"></span>
+  <span class="chip" id="stepInfo">0 / 0</span>
+</header>
+
+<div class="card controls" role="group" aria-label="播放控制">
+  <button id="btnReset" title="重置 (Home)">重置</button>
+  <button id="btnPrev" title="上一步 (←)">上一步</button>
+  <button id="btnPlay" class="primary" title="播放 / 暂停 (空格)">播放</button>
+  <button id="btnNext" title="下一步 (→)">下一步</button>
+  <input id="progress" type="range" min="0" max="0" value="0" aria-label="进度">
+  <label>速度 <input id="speed" type="range" min="1" max="10" value="5" aria-label="速度"></label>
+</div>
+
+<div class="card main has-code" id="main">
+  <div class="viz">
+    <div id="note" aria-live="polite"></div>
+    <div id="stage"></div>
+    <div id="legend"></div>
+  </div>
+  <aside id="codeWrap">
+    <div class="code-head">
+      <div class="code-status">
+        <span class="status-led" aria-hidden="true"></span>
+        <span class="code-file" id="codeFile">code.cpp</span>
+        <span class="code-lang" id="codeLang">cpp</span>
+        <span class="code-lines" id="codeLines"></span>
+      </div>
+      <div class="code-actions">
+        <button type="button" class="copy-btn" id="btnCopyCode">复制</button>
+        <button type="button" class="copy-btn" id="btnToggleCode">收起</button>
+      </div>
+    </div>
+    <div id="code" role="region" aria-label="模板代码"></div>
+  </aside>
+</div>
+
+<div class="card">
+  <label for="input"><b>输入数据</b></label>
+  <textarea id="input" spellcheck="false"></textarea>
+  <div class="controls" style="margin-top:8px">
+    <button id="btnApply">应用输入</button>
+    <button id="btnRandom">随机生成</button>
+    <span id="hint" class="chip"></span>
+  </div>
+  <div id="error" role="alert"></div>
+</div>
+
+<footer>教学演示，以模板代码为准。快捷键：空格 播放/暂停，← → 单步，Home 重置。</footer>
+
+<script type="text/plain" id="code-src">
+void clean_l()
+{
+	while(!L.empty() && dl[L.top()] > 0)
+	{
+		dl[L.top()] --;
+		L.pop(); //欠删的浮到堆顶了，这时候才真删
+	}
+}
+
+void clean_r()
+{
+	while(!R.empty() && dr[R.top()] > 0)
+	{
+		dr[R.top()] --;
+		R.pop();
+	}
+}
+
+// 维持「左堆放最小的 ceil(总个数 / 2) 个」：总个数为 k 时左堆正好 (k + 1) / 2 个，
+// k 是偶数时它就是第 k / 2 小，也就是下中位数；k 是奇数时它正好是正中间那个
+void balance()
+{
+	clean_l(); clean_r();
+	int target = (cnt_l + cnt_r + 1) / 2;
+	while(cnt_l > target) //左堆多了，把最大值让给右堆
+	{
+		clean_l();
+		R.push(L.top()); L.pop();
+		cnt_l --; cnt_r ++;
+	}
+	while(cnt_l < target) //左堆少了，从右堆拿最小的补上
+	{
+		clean_r();
+		L.push(R.top()); R.pop();
+		cnt_l ++; cnt_r --;
+	}
+}
+
+// 用法：ins(x) 插入一个数，del(x) 删掉一个还在窗口里的数，中位数就是 L.top()
+// 为什么不能只在窗口移动时 push 新元素、随便 pop 一下了事：要出窗口的 a[i-k] 可能埋在堆中间，
+// 堆只看得到堆顶，随手 pop 掉的是别的值——过期元素还赖在堆里、没过期的反而被扔掉，中位数就飘了；
+// 而且堆不支持按值删除。所以按值记一笔「欠删」，等它自己浮到堆顶时再丢（每个元素最多进出一次，均摊 O(log k)）
+void ins(ll x)
+{
+	clean_l();
+	if(L.empty() || x <= L.top()) { L.push(x); cnt_l ++; } //小于等于左堆顶就归左半，保证左堆全体 <= 右堆全体
+	else { R.push(x); cnt_r ++; }
+	balance();
+}
+
+void del(ll x)
+{
+	clean_l();
+	if(x <= L.top()) { dl[x] ++; cnt_l --; } //等于左堆顶时它必在左堆（相等值放哪边都行，统一记在左堆）
+	else { dr[x] ++; cnt_r --; }
+	balance();
+}
+</script>
+
+<script>
+
+  //只调用,不要改写
+  function layoutCircle(n, cx, cy, r) {
+  return Array.from({ length: n }, (_, i) => {
+    const a = -Math.PI / 2 + (2 * Math.PI * i) / n;
+    return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
+  });
+}
+
+function layoutBinary(root, left, right, dx = 44, dy = 60) {
+  const pos = {};
+  let k = 0;
+  (function dfs(u, d) {
+    if (u == null) return;
+    dfs(left[u], d + 1);
+    pos[u] = { x: k++ * dx, y: d * dy };
+    dfs(right[u], d + 1);
+  })(root, 0);
+  return pos;
+}
+
+function layoutTree(root, children, dx = 48, dy = 64) {
+  const pos = {};
+  let leaf = 0;
+  (function dfs(u, d) {
+    const cs = children[u] || [];
+    if (cs.length === 0) { pos[u] = { x: leaf++ * dx, y: d * dy }; return; }
+    cs.forEach((c) => dfs(c, d + 1));
+    pos[u] = { x: (pos[cs[0]].x + pos[cs[cs.length - 1]].x) / 2, y: d * dy };
+  })(root, 0);
+  return pos;
+}
+
+function edgeSvg(a, b, o = {}) {
+  const { r = 18, directed = false, color = 'var(--faint)', width = 2, dash = '' } = o;
+  const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len;
+  const x1 = a.x + ux * r, y1 = a.y + uy * r, x2 = b.x - ux * r, y2 = b.y - uy * r;
+  let s = '<line x1="' + x1 + '" y1="' + y1 + '" x2="' + x2 + '" y2="' + y2 + '" stroke="' + color +
+    '" stroke-width="' + width + '"' + (dash ? ' stroke-dasharray="' + dash + '"' : '') + '/>';
+  if (directed) {
+    const hx = x2 - ux * 9, hy = y2 - uy * 9;
+    s += '<polygon points="' + x2 + ',' + y2 + ' ' + (hx - uy * 5) + ',' + (hy + ux * 5) + ' ' +
+      (hx + uy * 5) + ',' + (hy - ux * 5) + '" fill="' + color + '"/>';
+  }
+  return s;
+}
+
+function svgBox(points, pad = 30) {
+  const xs = points.map((p) => p.x), ys = points.map((p) => p.y);
+  const x0 = Math.min(...xs) - pad, y0 = Math.min(...ys) - pad;
+  return x0 + ' ' + y0 + ' ' + (Math.max(...xs) + pad - x0) + ' ' + (Math.max(...ys) + pad - y0);
+}
+
+function textSvg(x, y, text, o = {}) {
+  const { size = 12, weight = 400, fill = 'var(--text)', anchor = 'middle' } = o;
+  return '<text x="' + x + '" y="' + y + '" font-size="' + size + '" font-weight="' + weight + '" text-anchor="' + anchor +
+    '" fill="' + fill + '" stroke="var(--surface)" stroke-width="3" paint-order="stroke" stroke-linejoin="round">' + text + '</text>';
+}
+/* === ALGO START：中位数（双堆 + 懒删除） === */
+const META = {
+  title: '滑动窗口中位数：双堆 + 懒删除',
+  complexity: '每次插入/删除 O(log k)（懒删除均摊）　取中位数 O(1)',
+  inputHint: '第一行 n k；第二行 n 个整数（n <= 8）',
+  file: '中位数.cpp',
+  lang: 'cpp',
+  legend: [
+    { color: 'var(--info)', text: '当前窗口内的元素 / 右堆堆顶' },
+    { color: 'var(--accent)', text: '左堆 L 的堆顶（中位数）' },
+    { color: 'var(--warn)', text: '欠删计数 dl / dr' },
+    { color: 'var(--ok)', text: '输出的中位数' },
+    { color: 'var(--border)', text: '堆中其它元素' },
+  ],
+};
+const MAX_N = 8;
+const DEFAULT_INPUT = '6 3\n1 8 2 7 3 6';
+
+function parseInput(text) {
+  if (!text.trim()) throw new Error('请输入 n k 和数组');
+  const lines = text.trim().split(/\r?\n/).map((s) => s.trim()).filter((s) => s !== '');
+  if (lines.length < 2) throw new Error('需要两行：n k、数组');
+  const head = lines[0].split(/\s+/).map(Number);
+  if (head.length !== 2 || head.some((v) => !Number.isInteger(v))) throw new Error('第一行必须是两个整数 n k');
+  const [n, k] = head;
+  if (!(n >= 1 && n <= MAX_N)) throw new Error('n 需在 1 到 ' + MAX_N + ' 之间');
+  if (!(k >= 1 && k <= n)) throw new Error('k 需在 1 到 n 之间');
+  const a = lines[1].split(/\s+/).map(Number);
+  if (a.length !== n) throw new Error('需要 ' + n + ' 个数');
+  if (a.some((v) => !Number.isInteger(v) || v < 0 || v > 30)) throw new Error('每个数需为 0 到 30 的整数（演示规模）');
+  return { n, k, a };
+}
+
+function randomInput() {
+  const n = 4 + Math.floor(Math.random() * 5);
+  const k = 2 + Math.floor(Math.random() * (n - 1));
+  return n + ' ' + k + '\n' + Array.from({ length: n }, () => Math.floor(Math.random() * 21)).join(' ');
+}
+
+function pushMax(h, v) {
+  h.push(v);
+  let i = h.length - 1;
+  while (i > 0) {
+    const p = (i - 1) >> 1;
+    if (h[p] >= h[i]) break;
+    const t = h[p]; h[p] = h[i]; h[i] = t;
+    i = p;
+  }
+}
+function popMax(h) {
+  const top = h[0];
+  const last = h.pop();
+  if (h.length) {
+    h[0] = last;
+    let i = 0;
+    while (true) {
+      let big = i;
+      const l = 2 * i + 1, r = 2 * i + 2;
+      if (l < h.length && h[l] > h[big]) big = l;
+      if (r < h.length && h[r] > h[big]) big = r;
+      if (big === i) break;
+      const t = h[i]; h[i] = h[big]; h[big] = t;
+      i = big;
+    }
+  }
+  return top;
+}
+function pushMin(h, v) {
+  h.push(v);
+  let i = h.length - 1;
+  while (i > 0) {
+    const p = (i - 1) >> 1;
+    if (h[p] <= h[i]) break;
+    const t = h[p]; h[p] = h[i]; h[i] = t;
+    i = p;
+  }
+}
+function popMin(h) {
+  const top = h[0];
+  const last = h.pop();
+  if (h.length) {
+    h[0] = last;
+    let i = 0;
+    while (true) {
+      let small = i;
+      const l = 2 * i + 1, r = 2 * i + 2;
+      if (l < h.length && h[l] < h[small]) small = l;
+      if (r < h.length && h[r] < h[small]) small = r;
+      if (small === i) break;
+      const t = h[i]; h[i] = h[small]; h[small] = t;
+      i = small;
+    }
+  }
+  return top;
+}
+
+function buildFrames({ n, k, a }) {
+  const frames = [];
+  const L = [], R = [];
+  const dl = {}, dr = {};
+  let cntL = 0, cntR = 0, curI = 0;
+  const out = [];
+  const snap = (f) => frames.push(Object.assign({
+    note: '', lines: [1], L: L.slice(), R: R.slice(), dl: Object.assign({}, dl), dr: Object.assign({}, dr),
+    cntL, cntR, i: curI, out: out.slice(), phase: 'init', median: null,
+  }, f));
+
+  function cleanL() {
+    while (L.length && (dl[L[0]] || 0) > 0) {
+      const v = L[0];
+      dl[v]--;
+      popMax(L);
+      snap({ note: 'clean_l：堆顶 ' + v + ' 还有欠删，dl[' + v + '] 减 1 并真正弹出', lines: [3, 5, 6], phase: 'clean' });
+    }
+  }
+  function cleanR() {
+    while (R.length && (dr[R[0]] || 0) > 0) {
+      const v = R[0];
+      dr[v]--;
+      popMin(R);
+      snap({ note: 'clean_r：堆顶 ' + v + ' 还有欠删，dr[' + v + '] 减 1 并真正弹出', lines: [12, 14, 15], phase: 'clean' });
+    }
+  }
+  function balance() {
+    cleanL(); cleanR();
+    const target = (cntL + cntR + 1) >> 1;
+    snap({ note: 'balance：target = (cnt_l+cnt_r+1)/2 = ' + target + '，左堆现有 ' + cntL + ' 个', lines: [21, 23, 24], phase: 'balance' });
+    while (cntL > target) {
+      cleanL();
+      const v = popMax(L);
+      pushMin(R, v);
+      cntL--; cntR++;
+      snap({ note: '左堆多了：把 L 的堆顶 ' + v + ' 交给 R，cnt_l = ' + cntL + '，cnt_r = ' + cntR, lines: [25, 27, 28, 29], phase: 'balance' });
+    }
+    while (cntL < target) {
+      cleanR();
+      const v = popMin(R);
+      pushMax(L, v);
+      cntL++; cntR--;
+      snap({ note: '左堆少了：把 R 的堆顶 ' + v + ' 补给 L，cnt_l = ' + cntL + '，cnt_r = ' + cntR, lines: [31, 33, 34, 35], phase: 'balance' });
+    }
+  }
+  function ins(x) {
+    cleanL();
+    snap({ note: 'ins(' + x + ')：先 clean_l，再看 x 与 L.top() 的关系', lines: [43, 45], phase: 'ins' });
+    if (!L.length || x <= L[0]) {
+      pushMax(L, x); cntL++;
+      snap({ note: 'L 为空或 x = ' + x + ' <= L.top()，x 归左堆，cnt_l = ' + cntL, lines: [46], phase: 'ins' });
+    } else {
+      pushMin(R, x); cntR++;
+      snap({ note: 'x = ' + x + ' > L.top()，x 归右堆，cnt_r = ' + cntR, lines: [47], phase: 'ins' });
+    }
+    balance();
+  }
+  function del(x) {
+    cleanL();
+    snap({ note: 'del(' + x + ')：先 clean_l，再按 x 与 L.top() 判断它在哪个堆', lines: [51, 53], phase: 'del' });
+    if (x <= L[0]) {
+      dl[x] = (dl[x] || 0) + 1; cntL--;
+      snap({ note: 'x = ' + x + ' <= L.top()：只给 dl[' + x + '] 记一笔欠删，cnt_l = ' + cntL, lines: [54], phase: 'del' });
+    } else {
+      dr[x] = (dr[x] || 0) + 1; cntR--;
+      snap({ note: 'x = ' + x + ' > L.top()：只给 dr[' + x + '] 记一笔欠删，cnt_r = ' + cntR, lines: [55], phase: 'del' });
+    }
+    balance();
+  }
+
+  for (let i = 1; i <= n; i++) {
+    curI = i;
+    snap({ note: 'i = ' + i + '：把 a[' + i + '] = ' + a[i - 1] + ' 加入窗口', lines: [43], i, phase: 'ins' });
+    ins(a[i - 1]);
+    if (i > k) {
+      curI = i;
+      del(a[i - k - 1]);
+    }
+    if (i >= k) {
+      cleanL();
+      const med = L[0];
+      out.push(med);
+      snap({ note: '窗口 a[' + (i - k + 1) + '..' + i + '] 的中位数 = L.top() = ' + med, lines: [45], i, phase: 'output', median: med });
+    }
+  }
+  snap({ note: '全部窗口输出：' + out.join(' '), lines: [43], i: n, phase: 'done', out: out.slice() });
+  return frames;
+}
+
+function render(frame, stage, data) {
+  stage.innerHTML = '';
+  const box = document.createElement('div');
+  const sub = document.createElement('div');
+  sub.className = 'sub-line';
+  sub.textContent = 'k = ' + data.k + '　cnt_l = ' + frame.cntL + '，cnt_r = ' + frame.cntR +
+    (frame.median !== null ? '　中位数 = ' + frame.median : '');
+  box.appendChild(sub);
+
+  const strip = document.createElement('div');
+  strip.className = 'strip';
+  strip.style.gridAutoColumns = '34px';
+  strip.style.justifyContent = 'start';
+  data.a.forEach((v, i) => {
+    const c = document.createElement('div');
+    c.className = 'b';
+    c.textContent = String(v);
+    if (i + 1 >= frame.i - data.k + 1 && i + 1 <= frame.i) c.style.border = '2px solid var(--info)';
+    if (i + 1 === frame.i) c.style.outline = '2px solid var(--accent)';
+    strip.appendChild(c);
+  });
+  box.appendChild(strip);
+
+  const heap = (arr, label, color) => {
+    const wrap = document.createElement('div');
+    wrap.style.marginBottom = '8px';
+    const t = document.createElement('div');
+    t.className = 'sub-line';
+    t.textContent = label + '（0 号是堆顶）';
+    wrap.appendChild(t);
+    const row = document.createElement('div');
+    row.className = 'strip';
+    row.style.gridAutoColumns = '34px';
+    row.style.justifyContent = 'start';
+    arr.forEach((v, idx) => {
+      const c = document.createElement('div');
+      c.className = 'b';
+      c.textContent = String(v);
+      if (idx === 0) { c.style.border = '2px solid ' + color; c.style.fontWeight = '700'; }
+      row.appendChild(c);
+    });
+    wrap.appendChild(row);
+    return wrap;
+  };
+  box.appendChild(heap(frame.L, '左堆 L（大根堆）', 'var(--accent)'));
+  box.appendChild(heap(frame.R, '右堆 R（小根堆）', 'var(--info)'));
+
+  const lazy = document.createElement('div');
+  lazy.className = 'plist';
+  Object.keys(frame.dl).forEach((k) => {
+    const c = document.createElement('span');
+    c.className = 'pchip on';
+    c.textContent = 'dl[' + k + ']=' + frame.dl[k];
+    c.style.border = '2px dashed var(--warn)';
+    lazy.appendChild(c);
+  });
+  Object.keys(frame.dr).forEach((k) => {
+    const c = document.createElement('span');
+    c.className = 'pchip on';
+    c.textContent = 'dr[' + k + ']=' + frame.dr[k];
+    c.style.border = '2px dashed var(--warn)';
+    lazy.appendChild(c);
+  });
+  if (lazy.children.length) box.appendChild(lazy);
+
+  if (frame.out.length) {
+    const row = document.createElement('div');
+    row.className = 'plist';
+    frame.out.forEach((v) => {
+      const c = document.createElement('span');
+      c.className = 'pchip';
+      c.style.border = '2px solid var(--ok)';
+      c.textContent = String(v);
+      row.appendChild(c);
+    });
+    box.appendChild(row);
+  }
+
+  const eq = document.createElement('div');
+  eq.className = 'eq-line';
+  if (frame.median !== null) {
+    eq.style.color = 'var(--ok)';
+    eq.textContent = '中位数 = L.top() = ' + frame.median;
+  } else {
+    eq.textContent = '左堆放较小的 (总个数+1)/2 个，堆顶就是下中位数；欠删元素等浮到堆顶再真正删。';
+  }
+  box.appendChild(eq);
+  stage.appendChild(box);
+}
+/* === ALGO END === */
+
+
+/* ---------- 播放器（固定部分，不要修改） ---------- */
+const MAX_FRAMES = 5000;
+const $ = (id) => document.getElementById(id);
+let data = null, frames = [], idx = 0, timer = null;
+
+const codeSrcText = (($('code-src') || {}).textContent || '').replace(/^\r?\n/, '').replace(/\s+$/, '');
+const codeLines = codeSrcText.split(/\r?\n/);
+const hasCode = codeLines.length > 0 && codeLines.join('').trim() !== '';
+const KW = /^(?:alignas|alignof|and|and_eq|asm|auto|bitand|bitor|bool|break|case|catch|char|class|compl|concept|const|consteval|constexpr|constinit|continue|decltype|default|delete|do|double|else|enum|explicit|export|extern|false|float|for|friend|goto|if|inline|int|long|mutable|namespace|new|noexcept|not|not_eq|nullptr|operator|or|or_eq|private|protected|public|register|requires|return|short|signed|sizeof|static|static_assert|struct|switch|template|this|throw|true|try|typedef|typeid|typename|union|unsigned|using|virtual|void|volatile|wchar_t|while|xor|xor_eq|ll|ull|i64|u64|vector|string|map|set|queue|stack|pair|cin|cout|endl)$/;
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function highlightCpp(line) {
+  let i = 0, out = '', n = line.length;
+  const push = (cls, text) => {
+    const t = escapeHtml(text);
+    out += cls ? '<span class="' + cls + '">' + t + '</span>' : t;
+  };
+  while (i < n) {
+    if (line[i] === '/' && line[i + 1] === '/') { push('tok-cmt', line.slice(i)); break; }
+    if (line[i] === '/' && line[i + 1] === '*') {
+      const end = line.indexOf('*/', i + 2);
+      const j = end < 0 ? n : end + 2;
+      push('tok-cmt', line.slice(i, j));
+      i = j; continue;
+    }
+    if (line[i] === '"' || line[i] === "'") {
+      const q = line[i];
+      let j = i + 1;
+      while (j < n) {
+        if (line[j] === '\\') { j += 2; continue; }
+        if (line[j] === q) { j++; break; }
+        j++;
+      }
+      push('tok-str', line.slice(i, j));
+      i = j; continue;
+    }
+    if (line[i] === '#' && !line.slice(0, i).trim()) { push('tok-pp', line.slice(i)); break; }
+    if (/[A-Za-z_]/.test(line[i])) {
+      let j = i + 1;
+      while (j < n && /[A-Za-z0-9_]/.test(line[j])) j++;
+      const w = line.slice(i, j);
+      push(KW.test(w) ? 'tok-kw' : '', w);
+      i = j; continue;
+    }
+    if (/[0-9]/.test(line[i])) {
+      let j = i + 1;
+      while (j < n && /[0-9a-fA-FxXlLuU.]/.test(line[j])) j++;
+      push('tok-num', line.slice(i, j));
+      i = j; continue;
+    }
+    out += escapeHtml(line[i]);
+    i++;
+  }
+  return out || ' ';
+}
+const lineEls = [];
+if (hasCode) {
+  const box = $('code');
+  codeLines.forEach((text, i) => {
+    const row = document.createElement('div');
+    row.className = 'ln';
+    const num = document.createElement('b');
+    num.textContent = String(i + 1);
+    const span = document.createElement('span');
+    span.innerHTML = highlightCpp(text === '' ? ' ' : text);
+    row.appendChild(num); row.appendChild(span);
+    box.appendChild(row); lineEls.push(row);
+  });
+  $('codeFile').textContent = (META && META.file) || 'code.cpp';
+  $('codeLang').textContent = (META && META.lang) || 'cpp';
+  $('codeLines').textContent = codeLines.length + ' 行';
+} else {
+  $('codeWrap').style.display = 'none';
+  $('main').classList.remove('has-code');
+}
+let codeOpen = hasCode;
+if (hasCode) {
+  $('btnToggleCode').onclick = () => {
+    codeOpen = !codeOpen;
+    $('codeWrap').classList.toggle('collapsed', !codeOpen);
+    $('main').classList.toggle('has-code', codeOpen);
+    $('btnToggleCode').textContent = codeOpen ? '收起' : '展开';
+  };
+  let copiedTimer = 0;
+  $('btnCopyCode').onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(codeSrcText);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = codeSrcText;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    $('btnCopyCode').textContent = '已复制';
+    $('btnCopyCode').classList.add('copied');
+    clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(() => {
+      $('btnCopyCode').textContent = '复制';
+      $('btnCopyCode').classList.remove('copied');
+    }, 1600);
+  };
+}
+function highlight(lines) {
+  if (!hasCode) return;
+  lineEls.forEach((el) => el.classList.remove('hl'));
+  const hit = (lines || []).filter((n) => n >= 1 && n <= lineEls.length);
+  hit.forEach((n) => lineEls[n - 1].classList.add('hl'));
+  if (!hit.length) return;
+  const box = $('code'), first = lineEls[hit[0] - 1], last = lineEls[hit[hit.length - 1] - 1];
+  if (first.offsetTop < box.scrollTop) box.scrollTop = Math.max(0, first.offsetTop - 8);
+  else if (last.offsetTop + last.offsetHeight > box.scrollTop + box.clientHeight) {
+    box.scrollTop = last.offsetTop + last.offsetHeight - box.clientHeight + 8;
+  }
+}
+
+function setError(msg) { $('error').textContent = msg || ''; }
+function stop() { if (timer) { clearInterval(timer); timer = null; } $('btnPlay').textContent = '播放'; }
+function show(i) {
+  if (!frames.length) return;
+  idx = Math.max(0, Math.min(frames.length - 1, i));
+  const f = frames[idx];
+  $('note').textContent = f.note || '';
+  render(f, $('stage'), data);
+  highlight(f.lines);
+  $('stepInfo').textContent = (idx + 1) + ' / ' + frames.length;
+  $('progress').value = String(idx);
+}
+function play() {
+  if (!frames.length) return;
+  if (idx >= frames.length - 1) show(0);
+  stop();
+  $('btnPlay').textContent = '暂停';
+  const delay = 1100 - Number($('speed').value) * 100;
+  timer = setInterval(() => {
+    if (idx >= frames.length - 1) { stop(); return; }
+    show(idx + 1);
+  }, delay);
+}
+function load(text) {
+  stop(); setError('');
+  try {
+    const parsed = parseInput(text);
+    const built = buildFrames(parsed);
+    if (!built.length) throw new Error('没有可演示的步骤');
+    if (built.length > MAX_FRAMES) throw new Error('步骤过多（' + built.length + '），请缩小输入规模');
+    data = parsed; frames = built;
+    $('progress').max = String(frames.length - 1);
+    show(0);
+  } catch (e) {
+    setError(e && e.message ? e.message : String(e));
+  }
+}
+
+$('title').textContent = META.title;
+document.title = META.title + ' · 算法可视化';
+$('complexity').textContent = META.complexity;
+$('hint').textContent = META.inputHint;
+$('legend').innerHTML = META.legend.map((x) => '<span><i style="background:' + x.color + '"></i>' + x.text + '</span>').join('');
+$('input').value = DEFAULT_INPUT;
+
+$('btnPlay').onclick = () => (timer ? stop() : play());
+$('btnNext').onclick = () => { stop(); show(idx + 1); };
+$('btnPrev').onclick = () => { stop(); show(idx - 1); };
+$('btnReset').onclick = () => { stop(); show(0); };
+$('progress').oninput = (e) => { stop(); show(Number(e.target.value)); };
+$('speed').oninput = () => { if (timer) play(); };
+$('btnApply').onclick = () => load($('input').value);
+$('btnRandom').onclick = () => { $('input').value = randomInput(); load($('input').value); };
+
+document.addEventListener('keydown', (e) => {
+  if (e.target && /^(TEXTAREA|INPUT)$/.test(e.target.tagName) && e.target.type !== 'range') return;
+  if (e.code === 'Space') { e.preventDefault(); timer ? stop() : play(); }
+  else if (e.code === 'ArrowRight') { stop(); show(idx + 1); }
+  else if (e.code === 'ArrowLeft') { stop(); show(idx - 1); }
+  else if (e.code === 'Home') { stop(); show(0); }
+});
+
+window.addEventListener('message', (e) => {
+  const m = e.data;
+  if (!m || m.type !== 'xcpc-theme') return;
+  document.documentElement.dataset.theme = m.dark ? 'dark' : 'light';
+  if (typeof m.hue === 'number') {
+    document.documentElement.style.setProperty('--hue', String(m.hue));
+    document.documentElement.style.setProperty('--accent', 'hsl(' + m.hue + ', 55%, ' + (m.dark ? 55 : 40) + '%)');
+  }
+});
+if (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) {
+  document.documentElement.dataset.theme = 'dark';
+}
+
+load(DEFAULT_INPUT);
+</script>
+</body>
+</html>

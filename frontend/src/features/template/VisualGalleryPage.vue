@@ -78,37 +78,39 @@ onMounted(() => {
         </n-button>
       </div>
     </div>
-    <n-spin :show="loading">
-      <n-alert v-if="errorText" type="error" :bordered="false">{{ errorText }}</n-alert>
-      <n-empty
-        v-else-if="!shown.length && !loading"
-        description="在版本目录放入 visual.html 即可出现在这里"
-      >
-        <template #extra>
-          <p class="vis-empty-hint">
-            也可点右上角「导入可视化」粘贴 HTML。骨架：docs/design/template/visual-skeleton.html
-          </p>
-        </template>
-      </n-empty>
-      <div v-else class="vis-cards">
-        <button
-          v-for="item in shown"
-          :key="item.id"
-          type="button"
-          class="vis-card"
-          @click="openCard(item)"
+    <div class="vis-gallery-body">
+      <n-spin :show="loading">
+        <n-alert v-if="errorText" type="error" :bordered="false">{{ errorText }}</n-alert>
+        <n-empty
+          v-else-if="!shown.length && !loading"
+          description="在版本目录放入 visual.html 即可出现在这里"
         >
-          <span class="vis-card-icon"><Play :size="16" /></span>
-          <span class="vis-card-body">
-            <span class="vis-card-name">{{ item.name }}</span>
-            <span class="vis-card-meta">{{ item.cat }} · {{ item.variant_count }} 个版本</span>
-            <span v-if="item.tags.length" class="vis-card-tags">
-              <span v-for="tag in item.tags" :key="tag" class="tag">{{ tag }}</span>
+          <template #extra>
+            <p class="vis-empty-hint">
+              也可点右上角「导入可视化」粘贴 HTML。骨架：docs/design/template/visual-skeleton.html
+            </p>
+          </template>
+        </n-empty>
+        <div v-else class="vis-cards">
+          <button
+            v-for="item in shown"
+            :key="item.id"
+            type="button"
+            class="vis-card"
+            @click="openCard(item)"
+          >
+            <span class="vis-card-icon"><Play :size="16" /></span>
+            <span class="vis-card-body">
+              <span class="vis-card-name">{{ item.name }}</span>
+              <span class="vis-card-meta">{{ item.cat }} · {{ item.variant_count }} 个版本</span>
+              <span v-if="item.tags.length" class="vis-card-tags">
+                <span v-for="tag in item.tags" :key="tag" class="tag">{{ tag }}</span>
+              </span>
             </span>
-          </span>
-        </button>
-      </div>
-    </n-spin>
+          </button>
+        </div>
+      </n-spin>
+    </div>
     <VisualImportModal v-model:show="showImport" @imported="onImported" />
     <VisualHelpModal v-model:show="showHelp" />
   </div>
@@ -116,19 +118,33 @@ onMounted(() => {
 
 <style scoped>
 .vis-gallery {
-  flex: 1;
+  flex: 1 1 0;
   min-height: 0;
+  height: 100%;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 12px 20px 20px;
+  padding: 12px 20px 0;
 }
 
 .vis-toolbar {
+  flex: none;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+}
+
+/* 独立滚动层：不依赖 n-spin 内部节点接力高度。
+   外壳 .app-shell 是 overflow:hidden，这里必须自己形成滚动。 */
+.vis-gallery-body {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-bottom: 20px;
 }
 
 .vis-cat {

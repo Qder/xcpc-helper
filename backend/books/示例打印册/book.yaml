@@ -15,3 +15,48 @@ blocks:
 - id: pb-1786301148238-11
   type: markdown
   content: 以下为代码模板。
+- id: pb-1792476904577-1
+  type: template
+  template: 图论/最短路
+  version: 链式前向星 dijkstra
+  heading_level: 3
+- id: pb-1792476905624-2
+  type: template
+  template: 图论/最短路
+  version: 链式前向星 SPFA
+  heading_level: 3
+- id: pb-1792476913954-3
+  type: template
+  template: 图论/欧拉路径
+  version: 有向图点序列版
+  heading_level: 3
+- id: pb-1792476922708-4
+  type: template
+  template: 多项式/FFT
+  version: class 封装版
+  heading_level: 3
+- id: pb-1792476923419-5
+  type: template
+  template: 多项式/FFT
+  version: 多项式乘法
+  heading_level: 3
+- id: pb-1792476935790-6
+  type: template
+  template: 多项式/NTT
+  version: class 封装版
+  heading_level: 3
+- id: pb-1792486368811-1
+  type: template
+  template: 字符串/字符串哈希
+  version: 单模哈希
+  heading_level: 3
+- id: pb-1792486387901-2
+  type: template
+  template: 数学/中国剩余定理（CRT）
+  version: CRT
+  heading_level: 3
+- id: pb-1792486396315-3
+  type: template
+  template: 数据结构/并查集
+  version: class 封装普通版
+  heading_level: 3

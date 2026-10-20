@@ -1,0 +1,564 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>算法可视化</title>
+<style>
+:root {
+  --hue: 160;
+  --bg: #f6f5f2; --surface: #ffffff; --text: #1f1d1a; --faint: #7a766f; --border: #e0ddd6;
+  --hl: rgba(37, 99, 235, .14); --accent: hsl(var(--hue), 60%, 40%); --warn: #d97706; --ok: #16a34a; --bad: #dc2626; --info: #2563eb;
+  --code-bg: #1c1a17; --code-bg-head: #26231f; --code-border: #35302a; --code-text: #e6e1d6; --code-ln: #6d675c;
+  --code-comment: #7d7a68; --code-string: #d9a35f; --code-number: #c98fc0; --code-preproc: #86b8b1;
+  --code-kw: hsl(var(--hue), 72%, 68%);
+}
+:root[data-theme="dark"] {
+  --bg: #191816; --surface: #23211e; --text: #ece9e3; --faint: #9a958c; --border: #37342f;
+  --hl: rgba(96, 165, 250, .22); --accent: hsl(var(--hue), 55%, 55%); --warn: #f59e0b; --ok: #4ade80; --bad: #f87171; --info: #60a5fa;
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: 16px; background: var(--bg); color: var(--text);
+  font: 14px/1.6 system-ui, -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; margin-bottom: 12px; }
+h1 { font-size: 18px; margin: 0; }
+.chip { font-size: 12px; color: var(--faint); border: 1px solid var(--border); border-radius: 999px; padding: 0 10px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 12px; }
+#stage { min-height: 220px; overflow: auto; }
+.main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+@media (min-width: 900px) { .main.has-code { grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); } }
+#codeWrap { min-width: 0; display: flex; flex-direction: column; background: var(--code-bg);
+  border: 1px solid var(--code-border); border-radius: 8px; overflow: hidden; color: var(--code-text); }
+.code-head { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 9px 12px; background: var(--code-bg-head); border-bottom: 1px solid var(--code-border); flex: none; }
+.code-status { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.status-led { width: 8px; height: 8px; border-radius: 50%; background: hsl(var(--hue), 72%, 62%); flex: none;
+  animation: led-pulse 2.2s ease-out infinite; }
+@keyframes led-pulse {
+  0% { box-shadow: 0 0 0 0 hsl(var(--hue), 72%, 62%, .45); }
+  70% { box-shadow: 0 0 0 7px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.code-file { font: 12px/1.4 ui-monospace, Consolas, "Cascadia Mono", monospace; color: var(--code-text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.code-lang { font: 10.5px/1.4 ui-monospace, Consolas, monospace; color: var(--code-ln);
+  border: 1px solid var(--code-border); border-radius: 4px; padding: 1px 6px; }
+.code-lines { font: 11px/1.4 ui-monospace, Consolas, monospace; color: var(--code-ln); }
+.code-actions { display: flex; gap: 6px; flex: none; }
+#codeWrap.collapsed #code { display: none; }
+#codeWrap.collapsed .code-head { border-bottom: none; }
+#codeWrap .copy-btn { display: inline-flex; align-items: center; height: 26px; padding: 0 10px;
+  border: 1px solid var(--code-border); border-radius: 6px; background: transparent; color: var(--code-text);
+  font-size: 12px; min-height: 26px; }
+#codeWrap .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+#codeWrap .copy-btn.copied { border-color: var(--accent); color: var(--accent); background: hsl(var(--hue), 60%, 40%, .12); }
+#code { max-height: 440px; overflow: auto; position: relative; background: var(--code-bg); padding: 8px 0 16px;
+  font: 13px/1.7 ui-monospace, Consolas, "Cascadia Mono", monospace; color: var(--code-text); }
+.ln { display: flex; white-space: pre; border-left: 3px solid transparent; padding-right: 16px; }
+.ln b { flex: none; width: 3.2em; text-align: right; padding-right: 12px; color: var(--code-ln); font-weight: 400; user-select: none; font-size: 11px; }
+.ln.hl { background: rgb(255 255 255 / 0.06); border-left-color: var(--accent); }
+.ln.hl b { color: var(--accent); }
+.tok-kw { color: var(--code-kw); }
+.tok-str { color: var(--code-string); }
+.tok-num { color: var(--code-number); }
+.tok-cmt { color: var(--code-comment); font-style: italic; }
+.tok-pp { color: var(--code-preproc); }
+#note { min-height: 24px; font-weight: 600; }
+#legend { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--faint); font-size: 12px; margin-top: 8px; }
+#legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.card.controls { position: sticky; top: 0; z-index: 20; }
+button { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 4px 12px; min-height: 32px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+input[type=range] { accent-color: var(--accent); }
+#progress { flex: 1 1 200px; min-width: 120px; }
+textarea { width: 100%; min-height: 60px; font: 13px/1.5 ui-monospace, Consolas, monospace; color: var(--text);
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px; resize: vertical; }
+#error { color: var(--bad); min-height: 20px; font-size: 13px; }
+footer { color: var(--faint); font-size: 12px; }
+
+/* --- 以下仅供 render 使用的样式（DP 系列） --- */
+.items-box { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.item-chip { font-size: 12px; border: 1px solid var(--border); border-radius: 999px; padding: 1px 10px; color: var(--faint); }
+.item-chip.on { border: 2px solid var(--accent); color: var(--text); font-weight: 700; }
+.item-chip.done { border: 2px solid var(--ok); color: var(--text); }
+.plist { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.pchip { font-size: 12px; border: 1px dashed var(--border); border-radius: 6px; padding: 1px 8px; color: var(--faint); font-family: ui-monospace, Consolas, monospace; }
+.pchip.on { border: 2px solid var(--accent); color: var(--text); font-weight: 700; }
+.sub-line { margin-bottom: 6px; font-size: 12px; color: var(--faint); }
+.dp-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(44px, 1fr)); gap: 6px; }
+.dp-cell { min-width: 0; text-align: center; border-radius: 8px; padding: 3px 4px 5px; background: var(--surface); overflow: hidden; }
+.dp-idx { font-size: 11px; color: var(--faint); }
+.dp-val { font-size: 16px; font-weight: 700; line-height: 1.3; }
+.dp-tag { font-size: 10px; min-height: 14px; color: var(--faint); white-space: nowrap; }
+.eq-line { margin-top: 12px; font: 13px/1.7 ui-monospace, Consolas, monospace; color: var(--text); }
+.tbl { display: grid; gap: 3px; margin-bottom: 4px; }
+.tc { text-align: center; border-radius: 5px; padding: 1px 2px; background: var(--surface); border: 1px solid var(--border); font-size: 12px; line-height: 1.6; }
+.tc.dim { color: var(--faint); background: var(--bg); }
+.tc.sm { font-size: 11px; }
+.rl { text-align: right; font-size: 11px; color: var(--faint); padding-right: 4px; align-self: center; }
+.hd { text-align: center; font-size: 10px; color: var(--faint); }
+.strip { display: grid; grid-auto-flow: column; gap: 4px; margin-bottom: 8px; }
+.strip .b { text-align: center; border: 1px solid var(--border); border-radius: 4px; padding: 2px 0; font: 12px/1.4 ui-monospace, Consolas, monospace; background: var(--surface); color: var(--faint); }
+.strip .b.on { border: 2px solid var(--accent); color: var(--text); font-weight: 700; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title"></h1>
+  <span class="chip" id="complexity"></span>
+  <span class="chip" id="stepInfo">0 / 0</span>
+</header>
+
+<div class="card controls" role="group" aria-label="播放控制">
+  <button id="btnReset" title="重置 (Home)">重置</button>
+  <button id="btnPrev" title="上一步 (←)">上一步</button>
+  <button id="btnPlay" class="primary" title="播放 / 暂停 (空格)">播放</button>
+  <button id="btnNext" title="下一步 (→)">下一步</button>
+  <input id="progress" type="range" min="0" max="0" value="0" aria-label="进度">
+  <label>速度 <input id="speed" type="range" min="1" max="10" value="5" aria-label="速度"></label>
+</div>
+
+<div class="card main has-code" id="main">
+  <div class="viz">
+    <div id="note" aria-live="polite"></div>
+    <div id="stage"></div>
+    <div id="legend"></div>
+  </div>
+  <aside id="codeWrap">
+    <div class="code-head">
+      <div class="code-status">
+        <span class="status-led" aria-hidden="true"></span>
+        <span class="code-file" id="codeFile">code.cpp</span>
+        <span class="code-lang" id="codeLang">cpp</span>
+        <span class="code-lines" id="codeLines"></span>
+      </div>
+      <div class="code-actions">
+        <button type="button" class="copy-btn" id="btnCopyCode">复制</button>
+        <button type="button" class="copy-btn" id="btnToggleCode">收起</button>
+      </div>
+    </div>
+    <div id="code" role="region" aria-label="模板代码"></div>
+  </aside>
+</div>
+
+<div class="card">
+  <label for="input"><b>输入数据</b></label>
+  <textarea id="input" spellcheck="false"></textarea>
+  <div class="controls" style="margin-top:8px">
+    <button id="btnApply">应用输入</button>
+    <button id="btnRandom">随机生成</button>
+    <span id="hint" class="chip"></span>
+  </div>
+  <div id="error" role="alert"></div>
+</div>
+
+<footer>教学演示，以模板代码为准。快捷键：空格 播放/暂停，← → 单步，Home 重置。</footer>
+
+<script type="text/plain" id="code-src">
+	int head = 1, tail = 0;
+	sx[0] = s[0], sy[0] = dp[0] + s[0] * s[0];
+	q[++ tail] = 0;
+	for(int i = 1; i <= N; i ++)
+	{
+		ll k = 2 * s[i];
+		while(head < tail && sy[q[head + 1]] - sy[q[head]] <= k * (sx[q[head + 1]] - sx[q[head]])) head ++; //队首到次队首的斜率 <= k，队首不优了
+		int j = q[head];
+		dp[i] = s[i] * s[i] + sy[j] - k * sx[j]; //取队首这个切点
+		sx[i] = s[i], sy[i] = dp[i] + s[i] * s[i];
+		while(head < tail && bad(q[tail - 1], q[tail], i)) tail --; //新点让队尾变成上凸，弹掉
+		q[++ tail] = i;
+	}
+	return dp[N];
+}
+
+int main()
+</script>
+
+<script>
+
+  //只调用,不要改写
+  function layoutCircle(n, cx, cy, r) {
+  return Array.from({ length: n }, (_, i) => {
+    const a = -Math.PI / 2 + (2 * Math.PI * i) / n;
+    return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
+  });
+}
+
+function layoutBinary(root, left, right, dx = 44, dy = 60) {
+  const pos = {};
+  let k = 0;
+  (function dfs(u, d) {
+    if (u == null) return;
+    dfs(left[u], d + 1);
+    pos[u] = { x: k++ * dx, y: d * dy };
+    dfs(right[u], d + 1);
+  })(root, 0);
+  return pos;
+}
+
+function layoutTree(root, children, dx = 48, dy = 64) {
+  const pos = {};
+  let leaf = 0;
+  (function dfs(u, d) {
+    const cs = children[u] || [];
+    if (cs.length === 0) { pos[u] = { x: leaf++ * dx, y: d * dy }; return; }
+    cs.forEach((c) => dfs(c, d + 1));
+    pos[u] = { x: (pos[cs[0]].x + pos[cs[cs.length - 1]].x) / 2, y: d * dy };
+  })(root, 0);
+  return pos;
+}
+
+function edgeSvg(a, b, o = {}) {
+  const { r = 18, directed = false, color = 'var(--faint)', width = 2, dash = '' } = o;
+  const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len;
+  const x1 = a.x + ux * r, y1 = a.y + uy * r, x2 = b.x - ux * r, y2 = b.y - uy * r;
+  let s = '<line x1="' + x1 + '" y1="' + y1 + '" x2="' + x2 + '" y2="' + y2 + '" stroke="' + color +
+    '" stroke-width="' + width + '"' + (dash ? ' stroke-dasharray="' + dash + '"' : '') + '/>';
+  if (directed) {
+    const hx = x2 - ux * 9, hy = y2 - uy * 9;
+    s += '<polygon points="' + x2 + ',' + y2 + ' ' + (hx - uy * 5) + ',' + (hy + ux * 5) + ' ' +
+      (hx + uy * 5) + ',' + (hy - ux * 5) + '" fill="' + color + '"/>';
+  }
+  return s;
+}
+
+function svgBox(points, pad = 30) {
+  const xs = points.map((p) => p.x), ys = points.map((p) => p.y);
+  const x0 = Math.min(...xs) - pad, y0 = Math.min(...ys) - pad;
+  return x0 + ' ' + y0 + ' ' + (Math.max(...xs) + pad - x0) + ' ' + (Math.max(...ys) + pad - y0);
+}
+
+function textSvg(x, y, text, o = {}) {
+  const { size = 12, weight = 400, fill = 'var(--text)', anchor = 'middle' } = o;
+  return '<text x="' + x + '" y="' + y + '" font-size="' + size + '" font-weight="' + weight + '" text-anchor="' + anchor +
+    '" fill="' + fill + '" stroke="var(--surface)" stroke-width="3" paint-order="stroke" stroke-linejoin="round">' + text + '</text>';
+}
+/* === ALGO START：斜率优化 DP === */
+const META = {
+  title: '斜率优化 DP',
+  complexity: '时间 O(n)　空间 O(n)',
+  inputHint: '第一行 n，第二行 n 个正整数：切成若干连续段，最小化每段和平方之和',
+  file: '斜率优化dp.cpp',
+  lang: 'cpp',
+  legend: [
+    { color: 'var(--accent)', text: '当前点 i' },
+    { color: 'var(--ok)', text: '下凸壳 / 队首最优决策 j' },
+    { color: 'var(--warn)', text: '本步被弹出的点' },
+    { color: 'var(--faint)', text: '不在凸壳上的点' },
+  ],
+};
+const MAX_N = 7;
+const DEFAULT_INPUT = '4\n2 3 1 4';
+
+function parseInput(text) {
+  const nums = text.trim().split(/\s+/).map(Number);
+  if (nums.length < 2) throw new Error('需要第一行 n，第二行 n 个数');
+  const n = nums[0];
+  if (!Number.isInteger(n) || n < 1 || n > MAX_N) throw new Error('n 需在 1 到 ' + MAX_N + ' 之间');
+  const a = nums.slice(1);
+  if (a.length !== n) throw new Error('数个数与 n 不一致');
+  if (a.some((v) => !Number.isInteger(v) || v <= 0 || v > 20)) throw new Error('每个数需为 1 到 20 的正整数');
+  const s = [0];
+  for (let i = 1; i <= n; i++) s[i] = s[i - 1] + a[i - 1];
+  return { n, a: [0].concat(a), s };
+}
+
+function randomInput() {
+  const n = 4 + Math.floor(Math.random() * 4);
+  const a = Array.from({ length: n }, () => 1 + Math.floor(Math.random() * 6));
+  return n + '\n' + a.join(' ');
+}
+
+function buildFrames({ n, a, s }) {
+  const frames = [];
+  const dp = new Array(n + 1).fill(0);
+  const sx = new Array(n + 1).fill(0), sy = new Array(n + 1).fill(0);
+  const q = [];
+  let head = 0, tail = -1;
+  const snap = (f) => frames.push(Object.assign({
+    i: 0, j: -1, head, tail, q: q.slice(), dp: dp.slice(), sx: sx.slice(), sy: sy.slice(),
+    popped: -1, phase: 'run', note: '', lines: [1],
+  }, f));
+
+  sx[0] = s[0]; sy[0] = dp[0] + s[0] * s[0];
+  q.push(0); tail = 0;
+  snap({ note: '初始：决策点 0 入队，sx[0] = 0，sy[0] = 0', phase: 'init', lines: [1, 2, 3, 4, 5] });
+
+  for (let i = 1; i <= n; i++) {
+    const k = 2 * s[i];
+    snap({ note: 'i = ' + i + '：k = 2·s[' + i + '] = ' + k + '，要去下凸壳上找斜率 ≤ k 的最右点', i, phase: 'query', lines: [6, 8] });
+    while (head < tail && sy[q[head + 1]] - sy[q[head]] <= k * (sx[q[head + 1]] - sx[q[head]])) {
+      const out = q[head];
+      head++;
+      snap({ note: '队首 ' + out + ' 到次队首的斜率 ≤ k = ' + k + '，队首不再最优，head++ 弹出', i, j: out, popped: out, phase: 'popFront', lines: [9] });
+    }
+    const j = q[head];
+    dp[i] = s[i] * s[i] + sy[j] - k * sx[j];
+    snap({ note: '取 j = ' + j + '：dp[' + i + '] = s[' + i + ']² + sy[' + j + '] - k·sx[' + j + '] = ' + s[i] * s[i] + ' + ' + sy[j] + ' - ' + k * sx[j] + ' = ' + dp[i], i, j, phase: 'calc', lines: [10, 11] });
+    sx[i] = s[i]; sy[i] = dp[i] + s[i] * s[i];
+    snap({ note: '新决策点 ' + i + '：sx = ' + sx[i] + '，sy = dp[' + i + '] + s[' + i + ']² = ' + sy[i], i, j, phase: 'add', lines: [12] });
+    while (head < tail) {
+      const A = q[tail - 1], B = q[tail];
+      const bad = (sy[B] - sy[A]) * (sx[i] - sx[B]) >= (sy[i] - sy[B]) * (sx[B] - sx[A]);
+      if (!bad) break;
+      tail--;
+      q.pop();
+      snap({ note: 'bad(' + A + ', ' + B + ', ' + i + ')：' + B + ' 落在凸壳上方，tail-- 弹出', i, popped: B, phase: 'popBack', lines: [13, 14] });
+    }
+    q.push(i); tail++;
+    snap({ note: '点 ' + i + ' 入队，凸壳 = [' + q.slice(head, tail + 1).join(', ') + ']', i, phase: 'push', lines: [15] });
+  }
+  snap({ note: '结束：dp[' + n + '] = ' + dp[n], i: n, phase: 'done', lines: [16] });
+  return frames;
+}
+
+/* 只根据 frame 与 data 绘制 */
+function render(frame, stage, data) {
+  const { n, s } = data;
+  stage.innerHTML = '';
+  const box = document.createElement('div');
+
+  const W = 420, H = 190, pad = 26;
+  const maxX = Math.max(1, ...frame.sx.slice(0, frame.i + 1));
+  const maxY = Math.max(1, ...frame.sy.slice(0, frame.i + 1));
+  const X = (x) => pad + (x / maxX) * (W - 2 * pad);
+  const Y = (y) => H - pad - (y / maxY) * (H - 2 * pad);
+
+  let svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="200">';
+  svg += '<line x1="' + pad + '" y1="' + (H - pad) + '" x2="' + (W - pad) + '" y2="' + (H - pad) + '" stroke="var(--border)"/>';
+  svg += '<line x1="' + pad + '" y1="' + pad + '" x2="' + pad + '" y2="' + (H - pad) + '" stroke="var(--border)"/>';
+  const hull = frame.q.slice(frame.head, frame.tail + 1);
+  for (let k = 1; k < hull.length; k++) {
+    const a = hull[k - 1], b = hull[k];
+    svg += '<line x1="' + X(frame.sx[a]) + '" y1="' + Y(frame.sy[a]) + '" x2="' + X(frame.sx[b]) + '" y2="' + Y(frame.sy[b]) + '" stroke="var(--ok)" stroke-width="2"/>';
+  }
+  for (let i = 0; i <= frame.i; i++) {
+    const inHull = hull.includes(i);
+    const col = i === frame.j ? 'var(--ok)' : i === frame.i ? 'var(--accent)' : inHull ? 'var(--ok)' : 'var(--faint)';
+    svg += '<circle cx="' + X(frame.sx[i]) + '" cy="' + Y(frame.sy[i]) + '" r="' + (i === frame.j || i === frame.i ? 6 : 4) + '" fill="' + col + '" stroke="var(--surface)"/>';
+    svg += '<text x="' + X(frame.sx[i]) + '" y="' + (Y(frame.sy[i]) - 9) + '" font-size="10" text-anchor="middle" fill="' + col + '">' + i + '</text>';
+  }
+  svg += '</svg>';
+  box.innerHTML = svg;
+
+  const q = document.createElement('div');
+  q.className = 'plist';
+  frame.q.forEach((v, k) => {
+    const chip = document.createElement('div');
+    chip.className = 'pchip' + (k === frame.head ? ' on' : '');
+    chip.textContent = (k === frame.head ? '队首 ' : '') + v + '(' + frame.sx[v] + ',' + frame.sy[v] + ')';
+    q.appendChild(chip);
+  });
+  box.appendChild(q);
+
+  const eq = document.createElement('div');
+  eq.className = 'eq-line';
+  eq.textContent = 'i = ' + frame.i + (frame.j >= 0 ? '　j = ' + frame.j + '　dp[' + frame.i + '] = ' + frame.dp[frame.i] : '') +
+    '　点 (x, y) = (s[j], dp[j] + s[j]²)，下凸壳用叉积维护';
+  box.appendChild(eq);
+  stage.appendChild(box);
+}
+/* === ALGO END === */
+
+
+/* ---------- 播放器（固定部分，不要修改） ---------- */
+const MAX_FRAMES = 5000;
+const $ = (id) => document.getElementById(id);
+let data = null, frames = [], idx = 0, timer = null;
+
+const codeSrcText = (($('code-src') || {}).textContent || '').replace(/^\r?\n/, '').replace(/\s+$/, '');
+const codeLines = codeSrcText.split(/\r?\n/);
+const hasCode = codeLines.length > 0 && codeLines.join('').trim() !== '';
+const KW = /^(?:alignas|alignof|and|and_eq|asm|auto|bitand|bitor|bool|break|case|catch|char|class|compl|concept|const|consteval|constexpr|constinit|continue|decltype|default|delete|do|double|else|enum|explicit|export|extern|false|float|for|friend|goto|if|inline|int|long|mutable|namespace|new|noexcept|not|not_eq|nullptr|operator|or|or_eq|private|protected|public|register|requires|return|short|signed|sizeof|static|static_assert|struct|switch|template|this|throw|true|try|typedef|typeid|typename|union|unsigned|using|virtual|void|volatile|wchar_t|while|xor|xor_eq|ll|ull|i64|u64|vector|string|map|set|queue|stack|pair|cin|cout|endl)$/;
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function highlightCpp(line) {
+  let i = 0, out = '', n = line.length;
+  const push = (cls, text) => {
+    const t = escapeHtml(text);
+    out += cls ? '<span class="' + cls + '">' + t + '</span>' : t;
+  };
+  while (i < n) {
+    if (line[i] === '/' && line[i + 1] === '/') { push('tok-cmt', line.slice(i)); break; }
+    if (line[i] === '/' && line[i + 1] === '*') {
+      const end = line.indexOf('*/', i + 2);
+      const j = end < 0 ? n : end + 2;
+      push('tok-cmt', line.slice(i, j));
+      i = j; continue;
+    }
+    if (line[i] === '"' || line[i] === "'") {
+      const q = line[i];
+      let j = i + 1;
+      while (j < n) {
+        if (line[j] === '\\') { j += 2; continue; }
+        if (line[j] === q) { j++; break; }
+        j++;
+      }
+      push('tok-str', line.slice(i, j));
+      i = j; continue;
+    }
+    if (line[i] === '#' && !line.slice(0, i).trim()) { push('tok-pp', line.slice(i)); break; }
+    if (/[A-Za-z_]/.test(line[i])) {
+      let j = i + 1;
+      while (j < n && /[A-Za-z0-9_]/.test(line[j])) j++;
+      const w = line.slice(i, j);
+      push(KW.test(w) ? 'tok-kw' : '', w);
+      i = j; continue;
+    }
+    if (/[0-9]/.test(line[i])) {
+      let j = i + 1;
+      while (j < n && /[0-9a-fA-FxXlLuU.]/.test(line[j])) j++;
+      push('tok-num', line.slice(i, j));
+      i = j; continue;
+    }
+    out += escapeHtml(line[i]);
+    i++;
+  }
+  return out || ' ';
+}
+const lineEls = [];
+if (hasCode) {
+  const box = $('code');
+  codeLines.forEach((text, i) => {
+    const row = document.createElement('div');
+    row.className = 'ln';
+    const num = document.createElement('b');
+    num.textContent = String(i + 1);
+    const span = document.createElement('span');
+    span.innerHTML = highlightCpp(text === '' ? ' ' : text);
+    row.appendChild(num); row.appendChild(span);
+    box.appendChild(row); lineEls.push(row);
+  });
+  $('codeFile').textContent = (META && META.file) || 'code.cpp';
+  $('codeLang').textContent = (META && META.lang) || 'cpp';
+  $('codeLines').textContent = codeLines.length + ' 行';
+} else {
+  $('codeWrap').style.display = 'none';
+  $('main').classList.remove('has-code');
+}
+let codeOpen = hasCode;
+if (hasCode) {
+  $('btnToggleCode').onclick = () => {
+    codeOpen = !codeOpen;
+    $('codeWrap').classList.toggle('collapsed', !codeOpen);
+    $('main').classList.toggle('has-code', codeOpen);
+    $('btnToggleCode').textContent = codeOpen ? '收起' : '展开';
+  };
+  let copiedTimer = 0;
+  $('btnCopyCode').onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(codeSrcText);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = codeSrcText;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    $('btnCopyCode').textContent = '已复制';
+    $('btnCopyCode').classList.add('copied');
+    clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(() => {
+      $('btnCopyCode').textContent = '复制';
+      $('btnCopyCode').classList.remove('copied');
+    }, 1600);
+  };
+}
+function highlight(lines) {
+  if (!hasCode) return;
+  lineEls.forEach((el) => el.classList.remove('hl'));
+  const hit = (lines || []).filter((n) => n >= 1 && n <= lineEls.length);
+  hit.forEach((n) => lineEls[n - 1].classList.add('hl'));
+  if (!hit.length) return;
+  const box = $('code'), first = lineEls[hit[0] - 1], last = lineEls[hit[hit.length - 1] - 1];
+  if (first.offsetTop < box.scrollTop) box.scrollTop = Math.max(0, first.offsetTop - 8);
+  else if (last.offsetTop + last.offsetHeight > box.scrollTop + box.clientHeight) {
+    box.scrollTop = last.offsetTop + last.offsetHeight - box.clientHeight + 8;
+  }
+}
+
+function setError(msg) { $('error').textContent = msg || ''; }
+function stop() { if (timer) { clearInterval(timer); timer = null; } $('btnPlay').textContent = '播放'; }
+function show(i) {
+  if (!frames.length) return;
+  idx = Math.max(0, Math.min(frames.length - 1, i));
+  const f = frames[idx];
+  $('note').textContent = f.note || '';
+  render(f, $('stage'), data);
+  highlight(f.lines);
+  $('stepInfo').textContent = (idx + 1) + ' / ' + frames.length;
+  $('progress').value = String(idx);
+}
+function play() {
+  if (!frames.length) return;
+  if (idx >= frames.length - 1) show(0);
+  stop();
+  $('btnPlay').textContent = '暂停';
+  const delay = 1100 - Number($('speed').value) * 100;
+  timer = setInterval(() => {
+    if (idx >= frames.length - 1) { stop(); return; }
+    show(idx + 1);
+  }, delay);
+}
+function load(text) {
+  stop(); setError('');
+  try {
+    const parsed = parseInput(text);
+    const built = buildFrames(parsed);
+    if (!built.length) throw new Error('没有可演示的步骤');
+    if (built.length > MAX_FRAMES) throw new Error('步骤过多（' + built.length + '），请缩小输入规模');
+    data = parsed; frames = built;
+    $('progress').max = String(frames.length - 1);
+    show(0);
+  } catch (e) {
+    setError(e && e.message ? e.message : String(e));
+  }
+}
+
+$('title').textContent = META.title;
+document.title = META.title + ' · 算法可视化';
+$('complexity').textContent = META.complexity;
+$('hint').textContent = META.inputHint;
+$('legend').innerHTML = META.legend.map((x) => '<span><i style="background:' + x.color + '"></i>' + x.text + '</span>').join('');
+$('input').value = DEFAULT_INPUT;
+
+$('btnPlay').onclick = () => (timer ? stop() : play());
+$('btnNext').onclick = () => { stop(); show(idx + 1); };
+$('btnPrev').onclick = () => { stop(); show(idx - 1); };
+$('btnReset').onclick = () => { stop(); show(0); };
+$('progress').oninput = (e) => { stop(); show(Number(e.target.value)); };
+$('speed').oninput = () => { if (timer) play(); };
+$('btnApply').onclick = () => load($('input').value);
+$('btnRandom').onclick = () => { $('input').value = randomInput(); load($('input').value); };
+
+document.addEventListener('keydown', (e) => {
+  if (e.target && /^(TEXTAREA|INPUT)$/.test(e.target.tagName) && e.target.type !== 'range') return;
+  if (e.code === 'Space') { e.preventDefault(); timer ? stop() : play(); }
+  else if (e.code === 'ArrowRight') { stop(); show(idx + 1); }
+  else if (e.code === 'ArrowLeft') { stop(); show(idx - 1); }
+  else if (e.code === 'Home') { stop(); show(0); }
+});
+
+window.addEventListener('message', (e) => {
+  const m = e.data;
+  if (!m || m.type !== 'xcpc-theme') return;
+  document.documentElement.dataset.theme = m.dark ? 'dark' : 'light';
+  if (typeof m.hue === 'number') {
+    document.documentElement.style.setProperty('--hue', String(m.hue));
+    document.documentElement.style.setProperty('--accent', 'hsl(' + m.hue + ', 55%, ' + (m.dark ? 55 : 40) + '%)');
+  }
+});
+if (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) {
+  document.documentElement.dataset.theme = 'dark';
+}
+
+load(DEFAULT_INPUT);
+</script>
+</body>
+</html>

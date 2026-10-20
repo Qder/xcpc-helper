@@ -1,0 +1,718 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>算法可视化</title>
+<style>
+:root {
+  --hue: 160;
+  --bg: #f6f5f2; --surface: #ffffff; --text: #1f1d1a; --faint: #7a766f; --border: #e0ddd6;
+  --hl: rgba(37, 99, 235, .14); --accent: hsl(var(--hue), 60%, 40%); --warn: #d97706; --ok: #16a34a; --bad: #dc2626; --info: #2563eb;
+  --code-bg: #1c1a17; --code-bg-head: #26231f; --code-border: #35302a; --code-text: #e6e1d6; --code-ln: #6d675c;
+  --code-comment: #7d7a68; --code-string: #d9a35f; --code-number: #c98fc0; --code-preproc: #86b8b1;
+  --code-kw: hsl(var(--hue), 72%, 68%);
+}
+:root[data-theme="dark"] {
+  --bg: #191816; --surface: #23211e; --text: #ece9e3; --faint: #9a958c; --border: #37342f;
+  --hl: rgba(96, 165, 250, .22); --accent: hsl(var(--hue), 55%, 55%); --warn: #f59e0b; --ok: #4ade80; --bad: #f87171; --info: #60a5fa;
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: 16px; background: var(--bg); color: var(--text);
+  font: 14px/1.6 system-ui, -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; margin-bottom: 12px; }
+h1 { font-size: 18px; margin: 0; }
+.chip { font-size: 12px; color: var(--faint); border: 1px solid var(--border); border-radius: 999px; padding: 0 10px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 12px; }
+#stage { min-height: 220px; overflow: auto; }
+.main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+@media (min-width: 900px) { .main.has-code { grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); } }
+#codeWrap { min-width: 0; display: flex; flex-direction: column; background: var(--code-bg);
+  border: 1px solid var(--code-border); border-radius: 8px; overflow: hidden; color: var(--code-text); }
+.code-head { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 9px 12px; background: var(--code-bg-head); border-bottom: 1px solid var(--code-border); flex: none; }
+.code-status { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.status-led { width: 8px; height: 8px; border-radius: 50%; background: hsl(var(--hue), 72%, 62%); flex: none;
+  animation: led-pulse 2.2s ease-out infinite; }
+@keyframes led-pulse {
+  0% { box-shadow: 0 0 0 0 hsl(var(--hue), 72%, 62%, .45); }
+  70% { box-shadow: 0 0 0 7px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.code-file { font: 12px/1.4 ui-monospace, Consolas, "Cascadia Mono", monospace; color: var(--code-text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.code-lang { font: 10.5px/1.4 ui-monospace, Consolas, monospace; color: var(--code-ln);
+  border: 1px solid var(--code-border); border-radius: 4px; padding: 1px 6px; }
+.code-lines { font: 11px/1.4 ui-monospace, Consolas, monospace; color: var(--code-ln); }
+.code-actions { display: flex; gap: 6px; flex: none; }
+#codeWrap.collapsed #code { display: none; }
+#codeWrap.collapsed .code-head { border-bottom: none; }
+#codeWrap .copy-btn { display: inline-flex; align-items: center; height: 26px; padding: 0 10px;
+  border: 1px solid var(--code-border); border-radius: 6px; background: transparent; color: var(--code-text);
+  font-size: 12px; min-height: 26px; }
+#codeWrap .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+#codeWrap .copy-btn.copied { border-color: var(--accent); color: var(--accent); background: hsl(var(--hue), 60%, 40%, .12); }
+#code { max-height: 440px; overflow: auto; position: relative; background: var(--code-bg); padding: 8px 0 16px;
+  font: 13px/1.7 ui-monospace, Consolas, "Cascadia Mono", monospace; color: var(--code-text); }
+.ln { display: flex; white-space: pre; border-left: 3px solid transparent; padding-right: 16px; }
+.ln b { flex: none; width: 3.2em; text-align: right; padding-right: 12px; color: var(--code-ln); font-weight: 400; user-select: none; font-size: 11px; }
+.ln.hl { background: rgb(255 255 255 / 0.06); border-left-color: var(--accent); }
+.ln.hl b { color: var(--accent); }
+.tok-kw { color: var(--code-kw); }
+.tok-str { color: var(--code-string); }
+.tok-num { color: var(--code-number); }
+.tok-cmt { color: var(--code-comment); font-style: italic; }
+.tok-pp { color: var(--code-preproc); }
+#note { min-height: 24px; font-weight: 600; }
+#legend { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--faint); font-size: 12px; margin-top: 8px; }
+#legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.card.controls { position: sticky; top: 0; z-index: 20; }
+button { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 4px 12px; min-height: 32px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+input[type=range] { accent-color: var(--accent); }
+#progress { flex: 1 1 200px; min-width: 120px; }
+textarea { width: 100%; min-height: 60px; font: 13px/1.5 ui-monospace, Consolas, monospace; color: var(--text);
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px; resize: vertical; }
+#error { color: var(--bad); min-height: 20px; font-size: 13px; }
+footer { color: var(--faint); font-size: 12px; }
+
+/* --- 以下仅供 render 使用的样式（DP 系列） --- */
+.items-box { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.item-chip { font-size: 12px; border: 1px solid var(--border); border-radius: 999px; padding: 1px 10px; color: var(--faint); }
+.item-chip.on { border: 2px solid var(--accent); color: var(--text); font-weight: 700; }
+.item-chip.done { border: 2px solid var(--ok); color: var(--text); }
+.plist { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.pchip { font-size: 12px; border: 1px dashed var(--border); border-radius: 6px; padding: 1px 8px; color: var(--faint); font-family: ui-monospace, Consolas, monospace; }
+.pchip.on { border: 2px solid var(--accent); color: var(--text); font-weight: 700; }
+.sub-line { margin-bottom: 6px; font-size: 12px; color: var(--faint); }
+.dp-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(44px, 1fr)); gap: 6px; }
+.dp-cell { min-width: 0; text-align: center; border-radius: 8px; padding: 3px 4px 5px; background: var(--surface); overflow: hidden; }
+.dp-idx { font-size: 11px; color: var(--faint); }
+.dp-val { font-size: 16px; font-weight: 700; line-height: 1.3; }
+.dp-tag { font-size: 10px; min-height: 14px; color: var(--faint); white-space: nowrap; }
+.eq-line { margin-top: 12px; font: 13px/1.7 ui-monospace, Consolas, monospace; color: var(--text); }
+.tbl { display: grid; gap: 3px; margin-bottom: 4px; }
+.tc { text-align: center; border-radius: 5px; padding: 1px 2px; background: var(--surface); border: 1px solid var(--border); font-size: 12px; line-height: 1.6; }
+.tc.dim { color: var(--faint); background: var(--bg); }
+.tc.sm { font-size: 11px; }
+.rl { text-align: right; font-size: 11px; color: var(--faint); padding-right: 4px; align-self: center; }
+.hd { text-align: center; font-size: 10px; color: var(--faint); }
+.strip { display: grid; grid-auto-flow: column; gap: 4px; margin-bottom: 8px; }
+.strip .b { text-align: center; border: 1px solid var(--border); border-radius: 4px; padding: 2px 0; font: 12px/1.4 ui-monospace, Consolas, monospace; background: var(--surface); color: var(--faint); }
+.strip .b.on { border: 2px solid var(--accent); color: var(--text); font-weight: 700; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title"></h1>
+  <span class="chip" id="complexity"></span>
+  <span class="chip" id="stepInfo">0 / 0</span>
+</header>
+
+<div class="card controls" role="group" aria-label="播放控制">
+  <button id="btnReset" title="重置 (Home)">重置</button>
+  <button id="btnPrev" title="上一步 (←)">上一步</button>
+  <button id="btnPlay" class="primary" title="播放 / 暂停 (空格)">播放</button>
+  <button id="btnNext" title="下一步 (→)">下一步</button>
+  <input id="progress" type="range" min="0" max="0" value="0" aria-label="进度">
+  <label>速度 <input id="speed" type="range" min="1" max="10" value="5" aria-label="速度"></label>
+</div>
+
+<div class="card main has-code" id="main">
+  <div class="viz">
+    <div id="note" aria-live="polite"></div>
+    <div id="stage"></div>
+    <div id="legend"></div>
+  </div>
+  <aside id="codeWrap">
+    <div class="code-head">
+      <div class="code-status">
+        <span class="status-led" aria-hidden="true"></span>
+        <span class="code-file" id="codeFile">code.cpp</span>
+        <span class="code-lang" id="codeLang">cpp</span>
+        <span class="code-lines" id="codeLines"></span>
+      </div>
+      <div class="code-actions">
+        <button type="button" class="copy-btn" id="btnCopyCode">复制</button>
+        <button type="button" class="copy-btn" id="btnToggleCode">收起</button>
+      </div>
+    </div>
+    <div id="code" role="region" aria-label="模板代码"></div>
+  </aside>
+</div>
+
+<div class="card">
+  <label for="input"><b>输入数据</b></label>
+  <textarea id="input" spellcheck="false"></textarea>
+  <div class="controls" style="margin-top:8px">
+    <button id="btnApply">应用输入</button>
+    <button id="btnRandom">随机生成</button>
+    <span id="hint" class="chip"></span>
+  </div>
+  <div id="error" role="alert"></div>
+</div>
+
+<footer>教学演示，以模板代码为准。快捷键：空格 播放/暂停，← → 单步，Home 重置。</footer>
+
+<script type="text/plain" id="code-src">
+// 点 c 在不在线段 ab 上：先要求共线，再要求落在包围盒内（不要用除法算参数）。
+bool on_seg(const Point &a, const Point &b, const Point &c)
+{
+	if(cross(a, b, c) != 0) return false;
+	return min(a.x, b.x) <= c.x && c.x <= max(a.x, b.x) &&
+	       min(a.y, b.y) <= c.y && c.y <= max(a.y, b.y);
+}
+
+// 鞋带公式，凹凸通用：把 O->p_i->p_{i+1} 的有向面积相加，凹角处的负贡献会自动抵消。
+// 逐项 1e18、1e5 项累加能到 1e23，中间用 __int128；结果面积两倍不超过 8e18，转 ll 返回。
+// 用法：ll s2 = polygon_area2(p, n); //p 是 1-based 顶点数组，返回 |面积| * 2
+ll polygon_area2(Point *a, int k)
+{
+	__int128 s = 0;
+	for(int i = 1; i <= k; i ++)
+	{
+		int j = (i == k ? 1 : i + 1);
+		s += (__int128)a[i].x * a[j].y - (__int128)a[j].x * a[i].y;
+	}
+	if(s < 0) s = -s;
+	return (ll)s;
+}
+
+// CCW 输入下所有拐角 cross >= 0 才是凸（允许共线）；出现一个负号就是凹点。
+// 用法：bool convex = is_convex(p, n); //顶点必须按 CCW 给出
+bool is_convex(Point *a, int k)
+{
+	for(int i = 1; i <= k; i ++)
+	{
+		int pre = (i == 1 ? k : i - 1);
+		int nxt = (i == k ? 1 : i + 1);
+		if(cross(a[pre], a[i], a[nxt]) < 0) return false;
+	}
+	return true;
+}
+
+// 射线法，凹凸通用，O(n)：
+// 1) 先判 ON：cross == 0 且 q 在边的包围盒里，纯整数精确，不依赖 EPS；
+// 2) (a.y > y) != (b.y > y) 是半开区间，只把边的下端点算一次，射线正好穿过顶点时不会重复计数；
+// 3) 交点 x 和 q.x 的比较交叉相乘成整数，D = b.y-a.y 的正负决定不等号方向，避免除法；
+//    交点 x 恰好等于 q.x 就是点在边上，第 1 步已经返回 ON，所以这里用严格 > / <。
+// 返回 0=OUT，1=IN，2=ON。
+int point_in_polygon(const Point &c)
+{
+	bool inside = false;
+	for(int i = 1; i <= n; i ++)
+	{
+		int j = (i == n ? 1 : i + 1);
+		const Point &a = p[i], &b = p[j];
+		if(on_seg(a, b, c)) return 2;
+		bool above_a = a.y > c.y;
+		bool above_b = b.y > c.y;
+		if(above_a == above_b) continue; //水平边、或整条边在射线同侧，都不产生交点
+		__int128 lhs = (__int128)(b.x - a.x) * (c.y - a.y);
+		__int128 rhs = (__int128)(c.x - a.x) * (b.y - a.y);
+		if(above_b ? lhs > rhs : lhs < rhs) inside = !inside; //交点严格在 c 右侧才计数
+	}
+	return inside ? 1 : 0;
+}
+</script>
+
+<script>
+
+  //只调用,不要改写
+  function layoutCircle(n, cx, cy, r) {
+  return Array.from({ length: n }, (_, i) => {
+    const a = -Math.PI / 2 + (2 * Math.PI * i) / n;
+    return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
+  });
+}
+
+function layoutBinary(root, left, right, dx = 44, dy = 60) {
+  const pos = {};
+  let k = 0;
+  (function dfs(u, d) {
+    if (u == null) return;
+    dfs(left[u], d + 1);
+    pos[u] = { x: k++ * dx, y: d * dy };
+    dfs(right[u], d + 1);
+  })(root, 0);
+  return pos;
+}
+
+function layoutTree(root, children, dx = 48, dy = 64) {
+  const pos = {};
+  let leaf = 0;
+  (function dfs(u, d) {
+    const cs = children[u] || [];
+    if (cs.length === 0) { pos[u] = { x: leaf++ * dx, y: d * dy }; return; }
+    cs.forEach((c) => dfs(c, d + 1));
+    pos[u] = { x: (pos[cs[0]].x + pos[cs[cs.length - 1]].x) / 2, y: d * dy };
+  })(root, 0);
+  return pos;
+}
+
+function edgeSvg(a, b, o = {}) {
+  const { r = 18, directed = false, color = 'var(--faint)', width = 2, dash = '' } = o;
+  const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len;
+  const x1 = a.x + ux * r, y1 = a.y + uy * r, x2 = b.x - ux * r, y2 = b.y - uy * r;
+  let s = '<line x1="' + x1 + '" y1="' + y1 + '" x2="' + x2 + '" y2="' + y2 + '" stroke="' + color +
+    '" stroke-width="' + width + '"' + (dash ? ' stroke-dasharray="' + dash + '"' : '') + '/>';
+  if (directed) {
+    const hx = x2 - ux * 9, hy = y2 - uy * 9;
+    s += '<polygon points="' + x2 + ',' + y2 + ' ' + (hx - uy * 5) + ',' + (hy + ux * 5) + ' ' +
+      (hx + uy * 5) + ',' + (hy - ux * 5) + '" fill="' + color + '"/>';
+  }
+  return s;
+}
+
+function svgBox(points, pad = 30) {
+  const xs = points.map((p) => p.x), ys = points.map((p) => p.y);
+  const x0 = Math.min(...xs) - pad, y0 = Math.min(...ys) - pad;
+  return x0 + ' ' + y0 + ' ' + (Math.max(...xs) + pad - x0) + ' ' + (Math.max(...ys) + pad - y0);
+}
+
+function textSvg(x, y, text, o = {}) {
+  const { size = 12, weight = 400, fill = 'var(--text)', anchor = 'middle' } = o;
+  return '<text x="' + x + '" y="' + y + '" font-size="' + size + '" font-weight="' + weight + '" text-anchor="' + anchor +
+    '" fill="' + fill + '" stroke="var(--surface)" stroke-width="3" paint-order="stroke" stroke-linejoin="round">' + text + '</text>';
+}
+/* === ALGO START：凹多边形（射线法判点与多边形位置） === */
+const META = {
+  title: '凹多边形：射线法判断点在多边形内外',
+  complexity: '每次查询 O(n)　空间 O(1)',
+  inputHint: '第一行 n，随后 n 行多边形顶点；再一行 q，随后 q 行查询点（整数）',
+  file: '凹多边形.cpp',
+  lang: 'cpp',
+  legend: [
+    { color: 'var(--info)', text: '多边形边 / 查询点 / 向右的射线' },
+    { color: 'var(--accent)', text: '当前扫描的边（粗线）；ON 的查询点' },
+    { color: 'var(--warn)', text: '使 inside 取反的交点边（虚线）与交点' },
+    { color: 'var(--ok)', text: '判定为 IN 的查询点' },
+    { color: 'var(--bad)', text: '判定为 OUT 的查询点' },
+    { color: 'var(--border)', text: '多边形填充与坐标网格' },
+  ],
+};
+const MAX_N = 8;
+const MAX_Q = 6;
+const DEFAULT_INPUT = '6\n0 0\n4 0\n4 2\n2 2\n2 4\n0 4\n5\n1 1\n3 3\n2 2\n3 2\n5 2';
+
+function parseInput(text) {
+  if (!text.trim()) throw new Error('请输入：n、n 个顶点、q、q 个查询点');
+  const nums = text.trim().split(/\s+/).map(Number);
+  if (nums.some((v) => !Number.isInteger(v))) throw new Error('顶点和查询点都必须是整数坐标');
+  let k = 0;
+  const n = nums[k++];
+  if (!(n >= 3 && n <= MAX_N)) throw new Error('顶点数 n 需在 3 到 ' + MAX_N + ' 之间');
+  if (nums.length < k + 2 * n + 1) throw new Error('需要 ' + n + ' 组顶点坐标');
+  const poly = [];
+  for (let i = 0; i < n; i++) {
+    const x = nums[k++], y = nums[k++];
+    if (Math.abs(x) > 30 || Math.abs(y) > 30) throw new Error('坐标绝对值需 <= 30（演示规模）');
+    poly.push({ x, y });
+  }
+  const q = nums[k++];
+  if (!(q >= 1 && q <= MAX_Q)) throw new Error('查询点数 q 需在 1 到 ' + MAX_Q + ' 之间');
+  if (nums.length !== k + 2 * q) throw new Error('需要 ' + q + ' 组查询点坐标');
+  const queries = [];
+  for (let i = 0; i < q; i++) {
+    const x = nums[k++], y = nums[k++];
+    if (Math.abs(x) > 30 || Math.abs(y) > 30) throw new Error('查询点坐标绝对值需 <= 30（演示规模）');
+    queries.push({ x, y });
+  }
+  return { n, poly, q, queries };
+}
+
+function randomInput() {
+  const w = 3 + Math.floor(Math.random() * 3);
+  const h = 3 + Math.floor(Math.random() * 3);
+  const a = 1 + Math.floor(Math.random() * (h - 1));
+  const b = 1 + Math.floor(Math.random() * (w - 1));
+  const poly = [[0, 0], [w, 0], [w, a], [b, a], [b, h], [0, h]];
+  const q = 4 + Math.floor(Math.random() * 3);
+  const out = [String(poly.length)];
+  poly.forEach((p) => out.push(p[0] + ' ' + p[1]));
+  out.push(String(q));
+  for (let i = 0; i < q; i++) out.push(Math.floor(Math.random() * (w + 2)) + ' ' + Math.floor(Math.random() * (h + 2)));
+  return out.join('\n');
+}
+
+function cross(a, b, c) {
+  return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+}
+function onSeg(a, b, c) {
+  if (cross(a, b, c) !== 0) return false;
+  return Math.min(a.x, b.x) <= c.x && c.x <= Math.max(a.x, b.x) &&
+    Math.min(a.y, b.y) <= c.y && c.y <= Math.max(a.y, b.y);
+}
+function cp(p) {
+  return { x: p.x, y: p.y };
+}
+
+function buildFrames({ n, poly, q, queries }) {
+  const frames = [];
+  const results = [];
+  const snap = (f) => frames.push(Object.assign({
+    note: '', lines: [43], qi: 0, c: null, edge: 0, crossV: 0, onSegRes: false,
+    aboveA: false, aboveB: false, lhs: 0, rhs: 0, cond: false, inside: false,
+    status: '', counted: [], ix: null, results: results.map((r) => ({ x: r.x, y: r.y, status: r.status })),
+  }, f));
+
+  snap({ note: '多边形有 ' + n + ' 个顶点，共 ' + q + ' 个查询点；对每个点进入 point_in_polygon', lines: [43] });
+
+  for (let t = 0; t < queries.length; t++) {
+    const c = queries[t];
+    let inside = false;
+    const counted = [];
+    snap({
+      note: '第 ' + (t + 1) + ' 个查询点 (' + c.x + ',' + c.y + ')：inside = false，从第 1 条边开始扫描',
+      lines: [45, 46], qi: t + 1, c: cp(c), inside: false,
+    });
+    let status = '';
+    for (let i = 1; i <= n; i++) {
+      const j = (i === n ? 1 : i + 1);
+      const a = poly[i - 1], b = poly[j - 1];
+      const cr = cross(a, b, c);
+      const os = onSeg(a, b, c);
+      if (os) {
+        status = 'ON';
+        snap({
+          note: '第 ' + i + ' 条边 (' + a.x + ',' + a.y + ')→(' + b.x + ',' + b.y + ')：cross = ' + cr + ' 且落在包围盒内，on_seg 为真 → 返回 2（ON）',
+          lines: [50], qi: t + 1, c: cp(c), edge: i, crossV: cr, onSegRes: true, inside, status, counted: counted.slice(),
+        });
+        break;
+      }
+      const aboveA = a.y > c.y, aboveB = b.y > c.y;
+      snap({
+        note: '第 ' + i + ' 条边 (' + a.x + ',' + a.y + ')→(' + b.x + ',' + b.y + ')：cross = ' + cr + '，on_seg = false；above_a = ' + aboveA + '，above_b = ' + aboveB,
+        lines: [50, 51, 52], qi: t + 1, c: cp(c), edge: i, crossV: cr, aboveA, aboveB, inside, counted: counted.slice(),
+      });
+      if (aboveA === aboveB) {
+        snap({
+          note: '第 ' + i + ' 条边 above_a == above_b（' + aboveA + '）：水平边或整条边在射线同侧，continue，不计数',
+          lines: [53], qi: t + 1, c: cp(c), edge: i, aboveA, aboveB, inside, counted: counted.slice(),
+        });
+        continue;
+      }
+      const lhs = (b.x - a.x) * (c.y - a.y);
+      const rhs = (c.x - a.x) * (b.y - a.y);
+      const cond = aboveB ? lhs > rhs : lhs < rhs;
+      if (cond) { inside = !inside; counted.push(i); }
+      const ix = a.x + (c.y - a.y) * (b.x - a.x) / (b.y - a.y);
+      snap({
+        note: '第 ' + i + ' 条边：lhs = ' + lhs + '，rhs = ' + rhs + '，above_b = ' + aboveB +
+          (cond ? ' → 交点严格在查询点右侧，inside 取反为 ' + inside : ' → 交点不在右侧，inside 保持 ' + inside),
+        lines: [54, 55, 56], qi: t + 1, c: cp(c), edge: i, aboveA, aboveB, lhs, rhs, cond, inside, counted: counted.slice(), ix,
+      });
+    }
+    if (!status) status = inside ? 'IN' : 'OUT';
+    results.push({ x: c.x, y: c.y, status });
+    snap({
+      note: '查询点 (' + c.x + ',' + c.y + ') 扫描完 ' + n + ' 条边：inside = ' + inside + '，结果为 ' + status + '（0=OUT，1=IN，2=ON）',
+      lines: [58], qi: t + 1, c: cp(c), inside, status, counted: counted.slice(), results: results.map((r) => ({ x: r.x, y: r.y, status: r.status })),
+    });
+  }
+  snap({
+    note: '全部查询结束，共 ' + q + ' 个点：' + results.map((r) => '(' + r.x + ',' + r.y + ')=' + r.status).join('，'),
+    lines: [59], status: 'DONE', results: results.map((r) => ({ x: r.x, y: r.y, status: r.status })),
+  });
+  return frames;
+}
+
+function render(frame, stage, data) {
+  stage.innerHTML = '';
+  const box = document.createElement('div');
+  const sub = document.createElement('div');
+  sub.className = 'sub-line';
+  sub.textContent = '多边形 ' + data.n + ' 个顶点　查询 ' + (frame.qi || data.q) + ' / ' + data.q +
+    (frame.c ? '　当前点 (' + frame.c.x + ',' + frame.c.y + ')' : '');
+  box.appendChild(sub);
+
+  const W = 420, H = 300, PAD = 30;
+  const all = data.poly.concat(data.queries);
+  const xs = all.map((o) => o.x), ys = all.map((o) => o.y);
+  let x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  if (x0 === x1) { x0 -= 1; x1 += 1; }
+  if (y0 === y1) { y0 -= 1; y1 += 1; }
+  const sc = Math.min((W - 2 * PAD) / (x1 - x0), (H - 2 * PAD) / (y1 - y0));
+  const ox = PAD + ((W - 2 * PAD) - (x1 - x0) * sc) / 2;
+  const oy = PAD + ((H - 2 * PAD) - (y1 - y0) * sc) / 2;
+  const X = (x) => ox + (x - x0) * sc;
+  const Y = (y) => H - oy - (y - y0) * sc;
+
+  let svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;max-width:460px" role="img">';
+  svg += '<rect x="0" y="0" width="' + W + '" height="' + H + '" fill="var(--surface)" stroke="var(--border)"/>';
+  for (let gx = Math.ceil(x0); gx <= Math.floor(x1); gx++) {
+    if (x1 - x0 <= 20) svg += '<line x1="' + X(gx) + '" y1="' + Y(y0) + '" x2="' + X(gx) + '" y2="' + Y(y1) + '" stroke="var(--border)" stroke-dasharray="2 4"/>';
+  }
+  for (let gy = Math.ceil(y0); gy <= Math.floor(y1); gy++) {
+    if (y1 - y0 <= 20) svg += '<line x1="' + X(x0) + '" y1="' + Y(gy) + '" x2="' + X(x1) + '" y2="' + Y(gy) + '" stroke="var(--border)" stroke-dasharray="2 4"/>';
+  }
+
+  const polyPts = data.poly.map((o) => X(o.x) + ',' + Y(o.y)).join(' ');
+  svg += '<polygon points="' + polyPts + '" fill="var(--border)" fill-opacity="0.35" stroke="var(--info)" stroke-width="2"/>';
+
+  if (frame.c) {
+    svg += '<line x1="' + X(frame.c.x) + '" y1="' + Y(frame.c.y) + '" x2="' + (W - 8) + '" y2="' + Y(frame.c.y) +
+      '" stroke="var(--info)" stroke-width="1.5" stroke-dasharray="5 4"/>';
+    svg += '<text x="' + (W - 10) + '" y="' + (Y(frame.c.y) - 5) + '" font-size="10" text-anchor="end" fill="var(--info)">射线 y = ' + frame.c.y + '</text>';
+  }
+
+  if (frame.edge >= 1 && frame.c) {
+    const i = frame.edge;
+    const a = data.poly[i - 1], b = data.poly[i === data.n ? 0 : i];
+    svg += '<line x1="' + X(a.x) + '" y1="' + Y(a.y) + '" x2="' + X(b.x) + '" y2="' + Y(b.y) + '" stroke="var(--accent)" stroke-width="4"/>';
+  }
+  frame.counted.forEach((e) => {
+    const a = data.poly[e - 1], b = data.poly[e === data.n ? 0 : e];
+    if (e === frame.edge) return;
+    svg += '<line x1="' + X(a.x) + '" y1="' + Y(a.y) + '" x2="' + X(b.x) + '" y2="' + Y(b.y) + '" stroke="var(--warn)" stroke-width="2.5" stroke-dasharray="4 3"/>';
+  });
+  if (frame.ix !== null && frame.c) {
+    svg += '<circle cx="' + X(frame.ix) + '" cy="' + Y(frame.c.y) + '" r="5" fill="none" stroke="var(--warn)" stroke-width="2.5"/>';
+  }
+
+  data.poly.forEach((o, i) => {
+    svg += '<circle cx="' + X(o.x) + '" cy="' + Y(o.y) + '" r="3" fill="var(--info)"/>';
+    svg += '<text x="' + (X(o.x) + 6) + '" y="' + (Y(o.y) - 6) + '" font-size="10" fill="var(--faint)">p' + (i + 1) + '</text>';
+  });
+
+  frame.results.forEach((r) => {
+    const fill = r.status === 'IN' ? 'var(--ok)' : r.status === 'ON' ? 'var(--accent)' : 'var(--bad)';
+    svg += '<circle cx="' + X(r.x) + '" cy="' + Y(r.y) + '" r="4" fill="' + fill + '"/>';
+    svg += '<text x="' + (X(r.x) + 6) + '" y="' + (Y(r.y) + 14) + '" font-size="10" fill="' + fill + '">' + r.status + '</text>';
+  });
+  if (frame.c) {
+    const fill = frame.status === 'IN' ? 'var(--ok)' : frame.status === 'ON' ? 'var(--accent)' : frame.status === 'OUT' ? 'var(--bad)' : 'var(--info)';
+    svg += '<circle cx="' + X(frame.c.x) + '" cy="' + Y(frame.c.y) + '" r="7" fill="' + fill + '" stroke="var(--surface)" stroke-width="2"/>';
+  }
+  svg += '</svg>';
+  const wrap = document.createElement('div');
+  wrap.innerHTML = svg;
+  box.appendChild(wrap);
+
+  if (frame.results.length) {
+    const row = document.createElement('div');
+    row.className = 'plist';
+    frame.results.forEach((r) => {
+      const c = document.createElement('span');
+      c.className = 'pchip' + (r.status === 'IN' ? ' on' : '');
+      c.textContent = '(' + r.x + ',' + r.y + ') ' + r.status;
+      row.appendChild(c);
+    });
+    box.appendChild(row);
+  }
+
+  const eq = document.createElement('div');
+  eq.className = 'eq-line';
+  if (frame.status === 'ON' || frame.status === 'IN' || frame.status === 'OUT') {
+    eq.textContent = '(' + frame.c.x + ',' + frame.c.y + ') → ' + frame.status +
+      '　inside = ' + frame.inside + '　计数交点边：' + (frame.counted.length ? frame.counted.join(', ') : '无');
+  } else {
+    eq.textContent = '射线法：只统计交点严格在查询点右侧的边，穿过奇数次则在内部。';
+  }
+  box.appendChild(eq);
+  stage.appendChild(box);
+}
+/* === ALGO END === */
+
+
+/* ---------- 播放器（固定部分，不要修改） ---------- */
+const MAX_FRAMES = 5000;
+const $ = (id) => document.getElementById(id);
+let data = null, frames = [], idx = 0, timer = null;
+
+const codeSrcText = (($('code-src') || {}).textContent || '').replace(/^\r?\n/, '').replace(/\s+$/, '');
+const codeLines = codeSrcText.split(/\r?\n/);
+const hasCode = codeLines.length > 0 && codeLines.join('').trim() !== '';
+const KW = /^(?:alignas|alignof|and|and_eq|asm|auto|bitand|bitor|bool|break|case|catch|char|class|compl|concept|const|consteval|constexpr|constinit|continue|decltype|default|delete|do|double|else|enum|explicit|export|extern|false|float|for|friend|goto|if|inline|int|long|mutable|namespace|new|noexcept|not|not_eq|nullptr|operator|or|or_eq|private|protected|public|register|requires|return|short|signed|sizeof|static|static_assert|struct|switch|template|this|throw|true|try|typedef|typeid|typename|union|unsigned|using|virtual|void|volatile|wchar_t|while|xor|xor_eq|ll|ull|i64|u64|vector|string|map|set|queue|stack|pair|cin|cout|endl)$/;
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function highlightCpp(line) {
+  let i = 0, out = '', n = line.length;
+  const push = (cls, text) => {
+    const t = escapeHtml(text);
+    out += cls ? '<span class="' + cls + '">' + t + '</span>' : t;
+  };
+  while (i < n) {
+    if (line[i] === '/' && line[i + 1] === '/') { push('tok-cmt', line.slice(i)); break; }
+    if (line[i] === '/' && line[i + 1] === '*') {
+      const end = line.indexOf('*/', i + 2);
+      const j = end < 0 ? n : end + 2;
+      push('tok-cmt', line.slice(i, j));
+      i = j; continue;
+    }
+    if (line[i] === '"' || line[i] === "'") {
+      const q = line[i];
+      let j = i + 1;
+      while (j < n) {
+        if (line[j] === '\\') { j += 2; continue; }
+        if (line[j] === q) { j++; break; }
+        j++;
+      }
+      push('tok-str', line.slice(i, j));
+      i = j; continue;
+    }
+    if (line[i] === '#' && !line.slice(0, i).trim()) { push('tok-pp', line.slice(i)); break; }
+    if (/[A-Za-z_]/.test(line[i])) {
+      let j = i + 1;
+      while (j < n && /[A-Za-z0-9_]/.test(line[j])) j++;
+      const w = line.slice(i, j);
+      push(KW.test(w) ? 'tok-kw' : '', w);
+      i = j; continue;
+    }
+    if (/[0-9]/.test(line[i])) {
+      let j = i + 1;
+      while (j < n && /[0-9a-fA-FxXlLuU.]/.test(line[j])) j++;
+      push('tok-num', line.slice(i, j));
+      i = j; continue;
+    }
+    out += escapeHtml(line[i]);
+    i++;
+  }
+  return out || ' ';
+}
+const lineEls = [];
+if (hasCode) {
+  const box = $('code');
+  codeLines.forEach((text, i) => {
+    const row = document.createElement('div');
+    row.className = 'ln';
+    const num = document.createElement('b');
+    num.textContent = String(i + 1);
+    const span = document.createElement('span');
+    span.innerHTML = highlightCpp(text === '' ? ' ' : text);
+    row.appendChild(num); row.appendChild(span);
+    box.appendChild(row); lineEls.push(row);
+  });
+  $('codeFile').textContent = (META && META.file) || 'code.cpp';
+  $('codeLang').textContent = (META && META.lang) || 'cpp';
+  $('codeLines').textContent = codeLines.length + ' 行';
+} else {
+  $('codeWrap').style.display = 'none';
+  $('main').classList.remove('has-code');
+}
+let codeOpen = hasCode;
+if (hasCode) {
+  $('btnToggleCode').onclick = () => {
+    codeOpen = !codeOpen;
+    $('codeWrap').classList.toggle('collapsed', !codeOpen);
+    $('main').classList.toggle('has-code', codeOpen);
+    $('btnToggleCode').textContent = codeOpen ? '收起' : '展开';
+  };
+  let copiedTimer = 0;
+  $('btnCopyCode').onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(codeSrcText);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = codeSrcText;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    $('btnCopyCode').textContent = '已复制';
+    $('btnCopyCode').classList.add('copied');
+    clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(() => {
+      $('btnCopyCode').textContent = '复制';
+      $('btnCopyCode').classList.remove('copied');
+    }, 1600);
+  };
+}
+function highlight(lines) {
+  if (!hasCode) return;
+  lineEls.forEach((el) => el.classList.remove('hl'));
+  const hit = (lines || []).filter((n) => n >= 1 && n <= lineEls.length);
+  hit.forEach((n) => lineEls[n - 1].classList.add('hl'));
+  if (!hit.length) return;
+  const box = $('code'), first = lineEls[hit[0] - 1], last = lineEls[hit[hit.length - 1] - 1];
+  if (first.offsetTop < box.scrollTop) box.scrollTop = Math.max(0, first.offsetTop - 8);
+  else if (last.offsetTop + last.offsetHeight > box.scrollTop + box.clientHeight) {
+    box.scrollTop = last.offsetTop + last.offsetHeight - box.clientHeight + 8;
+  }
+}
+
+function setError(msg) { $('error').textContent = msg || ''; }
+function stop() { if (timer) { clearInterval(timer); timer = null; } $('btnPlay').textContent = '播放'; }
+function show(i) {
+  if (!frames.length) return;
+  idx = Math.max(0, Math.min(frames.length - 1, i));
+  const f = frames[idx];
+  $('note').textContent = f.note || '';
+  render(f, $('stage'), data);
+  highlight(f.lines);
+  $('stepInfo').textContent = (idx + 1) + ' / ' + frames.length;
+  $('progress').value = String(idx);
+}
+function play() {
+  if (!frames.length) return;
+  if (idx >= frames.length - 1) show(0);
+  stop();
+  $('btnPlay').textContent = '暂停';
+  const delay = 1100 - Number($('speed').value) * 100;
+  timer = setInterval(() => {
+    if (idx >= frames.length - 1) { stop(); return; }
+    show(idx + 1);
+  }, delay);
+}
+function load(text) {
+  stop(); setError('');
+  try {
+    const parsed = parseInput(text);
+    const built = buildFrames(parsed);
+    if (!built.length) throw new Error('没有可演示的步骤');
+    if (built.length > MAX_FRAMES) throw new Error('步骤过多（' + built.length + '），请缩小输入规模');
+    data = parsed; frames = built;
+    $('progress').max = String(frames.length - 1);
+    show(0);
+  } catch (e) {
+    setError(e && e.message ? e.message : String(e));
+  }
+}
+
+$('title').textContent = META.title;
+document.title = META.title + ' · 算法可视化';
+$('complexity').textContent = META.complexity;
+$('hint').textContent = META.inputHint;
+$('legend').innerHTML = META.legend.map((x) => '<span><i style="background:' + x.color + '"></i>' + x.text + '</span>').join('');
+$('input').value = DEFAULT_INPUT;
+
+$('btnPlay').onclick = () => (timer ? stop() : play());
+$('btnNext').onclick = () => { stop(); show(idx + 1); };
+$('btnPrev').onclick = () => { stop(); show(idx - 1); };
+$('btnReset').onclick = () => { stop(); show(0); };
+$('progress').oninput = (e) => { stop(); show(Number(e.target.value)); };
+$('speed').oninput = () => { if (timer) play(); };
+$('btnApply').onclick = () => load($('input').value);
+$('btnRandom').onclick = () => { $('input').value = randomInput(); load($('input').value); };
+
+document.addEventListener('keydown', (e) => {
+  if (e.target && /^(TEXTAREA|INPUT)$/.test(e.target.tagName) && e.target.type !== 'range') return;
+  if (e.code === 'Space') { e.preventDefault(); timer ? stop() : play(); }
+  else if (e.code === 'ArrowRight') { stop(); show(idx + 1); }
+  else if (e.code === 'ArrowLeft') { stop(); show(idx - 1); }
+  else if (e.code === 'Home') { stop(); show(0); }
+});
+
+window.addEventListener('message', (e) => {
+  const m = e.data;
+  if (!m || m.type !== 'xcpc-theme') return;
+  document.documentElement.dataset.theme = m.dark ? 'dark' : 'light';
+  if (typeof m.hue === 'number') {
+    document.documentElement.style.setProperty('--hue', String(m.hue));
+    document.documentElement.style.setProperty('--accent', 'hsl(' + m.hue + ', 55%, ' + (m.dark ? 55 : 40) + '%)');
+  }
+});
+if (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) {
+  document.documentElement.dataset.theme = 'dark';
+}
+
+load(DEFAULT_INPUT);
+</script>
+</body>
+</html>

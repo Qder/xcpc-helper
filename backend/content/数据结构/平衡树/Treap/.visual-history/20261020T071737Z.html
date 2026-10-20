@@ -1,0 +1,749 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>算法可视化</title>
+<style>
+:root {
+  --hue: 160;
+  --bg: #f6f5f2; --surface: #ffffff; --text: #1f1d1a; --faint: #7a766f; --border: #e0ddd6;
+  --hl: rgba(37, 99, 235, .14); --accent: hsl(var(--hue), 60%, 40%); --warn: #d97706; --ok: #16a34a; --bad: #dc2626; --info: #2563eb;
+  --code-bg: #1c1a17; --code-bg-head: #26231f; --code-border: #35302a; --code-text: #e6e1d6; --code-ln: #6d675c;
+  --code-comment: #7d7a68; --code-string: #d9a35f; --code-number: #c98fc0; --code-preproc: #86b8b1;
+  --code-kw: hsl(var(--hue), 72%, 68%);
+}
+:root[data-theme="dark"] {
+  --bg: #191816; --surface: #23211e; --text: #ece9e3; --faint: #9a958c; --border: #37342f;
+  --hl: rgba(96, 165, 250, .22); --accent: hsl(var(--hue), 55%, 55%); --warn: #f59e0b; --ok: #4ade80; --bad: #f87171; --info: #60a5fa;
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: 16px; background: var(--bg); color: var(--text);
+  font: 14px/1.6 system-ui, -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; margin-bottom: 12px; }
+h1 { font-size: 18px; margin: 0; }
+.chip { font-size: 12px; color: var(--faint); border: 1px solid var(--border); border-radius: 999px; padding: 0 10px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 12px; }
+#stage { min-height: 220px; overflow: auto; }
+.main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+@media (min-width: 900px) { .main.has-code { grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); } }
+#codeWrap { min-width: 0; display: flex; flex-direction: column; background: var(--code-bg);
+  border: 1px solid var(--code-border); border-radius: 8px; overflow: hidden; color: var(--code-text); }
+.code-head { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 9px 12px; background: var(--code-bg-head); border-bottom: 1px solid var(--code-border); flex: none; }
+.code-status { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.status-led { width: 8px; height: 8px; border-radius: 50%; background: hsl(var(--hue), 72%, 62%); flex: none;
+  animation: led-pulse 2.2s ease-out infinite; }
+@keyframes led-pulse {
+  0% { box-shadow: 0 0 0 0 hsl(var(--hue), 72%, 62%, .45); }
+  70% { box-shadow: 0 0 0 7px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.code-file { font: 12px/1.4 ui-monospace, Consolas, "Cascadia Mono", monospace; color: var(--code-text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.code-lang { font: 10.5px/1.4 ui-monospace, Consolas, monospace; color: var(--code-ln);
+  border: 1px solid var(--code-border); border-radius: 4px; padding: 1px 6px; }
+.code-lines { font: 11px/1.4 ui-monospace, Consolas, monospace; color: var(--code-ln); }
+.code-actions { display: flex; gap: 6px; flex: none; }
+#codeWrap.collapsed #code { display: none; }
+#codeWrap.collapsed .code-head { border-bottom: none; }
+#codeWrap .copy-btn { display: inline-flex; align-items: center; height: 26px; padding: 0 10px;
+  border: 1px solid var(--code-border); border-radius: 6px; background: transparent; color: var(--code-text);
+  font-size: 12px; min-height: 26px; }
+#codeWrap .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+#codeWrap .copy-btn.copied { border-color: var(--accent); color: var(--accent); background: hsl(var(--hue), 60%, 40%, .12); }
+#code { max-height: 440px; overflow: auto; position: relative; background: var(--code-bg); padding: 8px 0 16px;
+  font: 13px/1.7 ui-monospace, Consolas, "Cascadia Mono", monospace; color: var(--code-text); }
+.ln { display: flex; white-space: pre; border-left: 3px solid transparent; padding-right: 16px; }
+.ln b { flex: none; width: 3.2em; text-align: right; padding-right: 12px; color: var(--code-ln); font-weight: 400; user-select: none; font-size: 11px; }
+.ln.hl { background: rgb(255 255 255 / 0.06); border-left-color: var(--accent); }
+.ln.hl b { color: var(--accent); }
+.tok-kw { color: var(--code-kw); }
+.tok-str { color: var(--code-string); }
+.tok-num { color: var(--code-number); }
+.tok-cmt { color: var(--code-comment); font-style: italic; }
+.tok-pp { color: var(--code-preproc); }
+#note { min-height: 24px; font-weight: 600; }
+#legend { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--faint); font-size: 12px; margin-top: 8px; }
+#legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.card.controls { position: sticky; top: 0; z-index: 20; }
+button { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 4px 12px; min-height: 32px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+input[type=range] { accent-color: var(--accent); }
+#progress { flex: 1 1 200px; min-width: 120px; }
+textarea { width: 100%; min-height: 60px; font: 13px/1.5 ui-monospace, Consolas, monospace; color: var(--text);
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px; resize: vertical; }
+#error { color: var(--bad); min-height: 20px; font-size: 13px; }
+footer { color: var(--faint); font-size: 12px; }
+
+/* --- 以下仅供 render 使用的样式（DP 系列） --- */
+.items-box { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.item-chip { font-size: 12px; border: 1px solid var(--border); border-radius: 999px; padding: 1px 10px; color: var(--faint); }
+.item-chip.on { border: 2px solid var(--accent); color: var(--text); font-weight: 700; }
+.item-chip.done { border: 2px solid var(--ok); color: var(--text); }
+.plist { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.pchip { font-size: 12px; border: 1px dashed var(--border); border-radius: 6px; padding: 1px 8px; color: var(--faint); font-family: ui-monospace, Consolas, monospace; }
+.pchip.on { border: 2px solid var(--accent); color: var(--text); font-weight: 700; }
+.sub-line { margin-bottom: 6px; font-size: 12px; color: var(--faint); }
+.dp-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(44px, 1fr)); gap: 6px; }
+.dp-cell { min-width: 0; text-align: center; border-radius: 8px; padding: 3px 4px 5px; background: var(--surface); overflow: hidden; }
+.dp-idx { font-size: 11px; color: var(--faint); }
+.dp-val { font-size: 16px; font-weight: 700; line-height: 1.3; }
+.dp-tag { font-size: 10px; min-height: 14px; color: var(--faint); white-space: nowrap; }
+.eq-line { margin-top: 12px; font: 13px/1.7 ui-monospace, Consolas, monospace; color: var(--text); }
+.tbl { display: grid; gap: 3px; margin-bottom: 4px; }
+.tc { text-align: center; border-radius: 5px; padding: 1px 2px; background: var(--surface); border: 1px solid var(--border); font-size: 12px; line-height: 1.6; }
+.tc.dim { color: var(--faint); background: var(--bg); }
+.tc.sm { font-size: 11px; }
+.rl { text-align: right; font-size: 11px; color: var(--faint); padding-right: 4px; align-self: center; }
+.hd { text-align: center; font-size: 10px; color: var(--faint); }
+.strip { display: grid; grid-auto-flow: column; gap: 4px; margin-bottom: 8px; }
+.strip .b { text-align: center; border: 1px solid var(--border); border-radius: 4px; padding: 2px 0; font: 12px/1.4 ui-monospace, Consolas, monospace; background: var(--surface); color: var(--faint); }
+.strip .b.on { border: 2px solid var(--accent); color: var(--text); font-weight: 700; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title"></h1>
+  <span class="chip" id="complexity"></span>
+  <span class="chip" id="stepInfo">0 / 0</span>
+</header>
+
+<div class="card controls" role="group" aria-label="播放控制">
+  <button id="btnReset" title="重置 (Home)">重置</button>
+  <button id="btnPrev" title="上一步 (←)">上一步</button>
+  <button id="btnPlay" class="primary" title="播放 / 暂停 (空格)">播放</button>
+  <button id="btnNext" title="下一步 (→)">下一步</button>
+  <input id="progress" type="range" min="0" max="0" value="0" aria-label="进度">
+  <label>速度 <input id="speed" type="range" min="1" max="10" value="5" aria-label="速度"></label>
+</div>
+
+<div class="card main has-code" id="main">
+  <div class="viz">
+    <div id="note" aria-live="polite"></div>
+    <div id="stage"></div>
+    <div id="legend"></div>
+  </div>
+  <aside id="codeWrap">
+    <div class="code-head">
+      <div class="code-status">
+        <span class="status-led" aria-hidden="true"></span>
+        <span class="code-file" id="codeFile">code.cpp</span>
+        <span class="code-lang" id="codeLang">cpp</span>
+        <span class="code-lines" id="codeLines"></span>
+      </div>
+      <div class="code-actions">
+        <button type="button" class="copy-btn" id="btnCopyCode">复制</button>
+        <button type="button" class="copy-btn" id="btnToggleCode">收起</button>
+      </div>
+    </div>
+    <div id="code" role="region" aria-label="模板代码"></div>
+  </aside>
+</div>
+
+<div class="card">
+  <label for="input"><b>输入数据</b></label>
+  <textarea id="input" spellcheck="false"></textarea>
+  <div class="controls" style="margin-top:8px">
+    <button id="btnApply">应用输入</button>
+    <button id="btnRandom">随机生成</button>
+    <span id="hint" class="chip"></span>
+  </div>
+  <div id="error" role="alert"></div>
+</div>
+
+<footer>教学演示，以模板代码为准。快捷键：空格 播放/暂停，← → 单步，Home 重置。</footer>
+
+<script type="text/plain" id="code-src">
+void push_up(int x)
+{
+	siz(x) = siz(ls(x)) + siz(rs(x)) + cnt(x);
+}
+
+void rrotate(int &p) //右旋
+{
+	int tmp = ls(p);
+	ls(p) = rs(tmp), rs(tmp) = p;
+	siz(tmp) = siz(p);
+	push_up(p);
+	p = tmp;
+}
+
+void lrotate(int &p) //左旋
+{
+	int tmp = rs(p);
+	rs(p) = ls(tmp), ls(tmp) = p;
+	siz(tmp) = siz(p);
+	push_up(p);
+	p = tmp;
+}
+
+void _add(int &p, int k)
+{
+	if(!p){
+		p = ++ tot;
+		siz(p) = cnt(p) = 1, val(p) = k;
+		ord(p) = rand();
+		return;
+	}
+	siz(p) ++;
+	if(val(p) == k) cnt(p) ++;
+	else if(val(p) > k){
+		_add(ls(p), k);
+		if(ord(p) > ord(ls(p))) rrotate(p);
+	}
+	else{
+		_add(rs(p), k);
+		if(ord(p) > ord(rs(p))) lrotate(p);
+	}
+}
+
+void _del(int &p, int k)
+{
+	if(!p) return;
+	if(val(p) == k){
+		if(cnt(p) > 1){
+			cnt(p) --, siz(p) --;
+			return;
+		}
+		if(!ls(p) || !rs(p)){
+			p = ls(p) + rs(p);
+			return;
+		}
+		else if(ord(ls(p)) < ord(rs(p))){
+			rrotate(p);
+			_del(p, k);
+		}
+		else{
+			lrotate(p);
+			_del(p, k);
+		}
+	}
+	else{
+		if(val(p) < k){
+			_del(rs(p), k);
+			siz(p) --;
+		}
+		else{
+			_del(ls(p), k);
+			siz(p) --;
+		}
+	}
+}
+
+int query_rank(int p, int k) //查询 k 的排名
+{
+	if(!p) return 1;
+	if(k < val(p)) return query_rank(ls(p), k);
+	else if(k > val(p)) return siz(ls(p)) + cnt(p) + query_rank(rs(p), k);
+	else return siz(ls(p)) + 1;
+}
+
+int query_num(int p, int k) //查询排名为 k 的数
+{
+	if(!p) return 0;
+	if(k <= siz(ls(p))) return query_num(ls(p), k);
+	else if(k > siz(ls(p)) + cnt(p)) return query_num(rs(p), k - siz(ls(p)) - cnt(p));
+	else return val(p);
+}
+</script>
+
+<script>
+
+  //只调用,不要改写
+  function layoutCircle(n, cx, cy, r) {
+  return Array.from({ length: n }, (_, i) => {
+    const a = -Math.PI / 2 + (2 * Math.PI * i) / n;
+    return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
+  });
+}
+
+function layoutBinary(root, left, right, dx = 44, dy = 60) {
+  const pos = {};
+  let k = 0;
+  (function dfs(u, d) {
+    if (u == null) return;
+    dfs(left[u], d + 1);
+    pos[u] = { x: k++ * dx, y: d * dy };
+    dfs(right[u], d + 1);
+  })(root, 0);
+  return pos;
+}
+
+function layoutTree(root, children, dx = 48, dy = 64) {
+  const pos = {};
+  let leaf = 0;
+  (function dfs(u, d) {
+    const cs = children[u] || [];
+    if (cs.length === 0) { pos[u] = { x: leaf++ * dx, y: d * dy }; return; }
+    cs.forEach((c) => dfs(c, d + 1));
+    pos[u] = { x: (pos[cs[0]].x + pos[cs[cs.length - 1]].x) / 2, y: d * dy };
+  })(root, 0);
+  return pos;
+}
+
+function edgeSvg(a, b, o = {}) {
+  const { r = 18, directed = false, color = 'var(--faint)', width = 2, dash = '' } = o;
+  const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len;
+  const x1 = a.x + ux * r, y1 = a.y + uy * r, x2 = b.x - ux * r, y2 = b.y - uy * r;
+  let s = '<line x1="' + x1 + '" y1="' + y1 + '" x2="' + x2 + '" y2="' + y2 + '" stroke="' + color +
+    '" stroke-width="' + width + '"' + (dash ? ' stroke-dasharray="' + dash + '"' : '') + '/>';
+  if (directed) {
+    const hx = x2 - ux * 9, hy = y2 - uy * 9;
+    s += '<polygon points="' + x2 + ',' + y2 + ' ' + (hx - uy * 5) + ',' + (hy + ux * 5) + ' ' +
+      (hx + uy * 5) + ',' + (hy - ux * 5) + '" fill="' + color + '"/>';
+  }
+  return s;
+}
+
+function svgBox(points, pad = 30) {
+  const xs = points.map((p) => p.x), ys = points.map((p) => p.y);
+  const x0 = Math.min(...xs) - pad, y0 = Math.min(...ys) - pad;
+  return x0 + ' ' + y0 + ' ' + (Math.max(...xs) + pad - x0) + ' ' + (Math.max(...ys) + pad - y0);
+}
+
+function textSvg(x, y, text, o = {}) {
+  const { size = 12, weight = 400, fill = 'var(--text)', anchor = 'middle' } = o;
+  return '<text x="' + x + '" y="' + y + '" font-size="' + size + '" font-weight="' + weight + '" text-anchor="' + anchor +
+    '" fill="' + fill + '" stroke="var(--surface)" stroke-width="3" paint-order="stroke" stroke-linejoin="round">' + text + '</text>';
+}
+/* === ALGO START：普通平衡树（Treap） === */
+const META = {
+  title: '普通平衡树（Treap）',
+  complexity: '期望 O(log n)（按随机优先级 ord 旋转）',
+  inputHint: '第一行操作数 m；随后 m 行 op k（1 插入、3 查排名、4 查第 k 小）',
+  file: '（Treap）P3369 【模板】普通平衡树.cpp',
+  lang: 'cpp',
+  legend: [
+    { color: 'var(--accent)', text: '当前递归到的节点 p（粗实线）' },
+    { color: 'var(--warn)', text: '本步参与旋转的 tmp（粗虚线）' },
+    { color: 'var(--info)', text: '查找路径上经过的节点' },
+    { color: 'var(--ok)', text: '查询答案所在的节点' },
+    { color: 'var(--border)', text: '其它节点' },
+  ],
+};
+const MAX_OPS = 10;
+const MAX_N = 99;
+const DEFAULT_INPUT = '8\n1 5\n1 3\n1 8\n1 6\n1 4\n3 6\n4 2\n1 7';
+
+function parseInput(text) {
+  if (!text.trim()) throw new Error('请输入操作序列');
+  const lines = text.trim().split(/\r?\n/).filter((s) => s.trim() !== '');
+  const m = Number(lines[0].trim());
+  if (!Number.isInteger(m) || m < 1 || m > MAX_OPS) throw new Error('操作数需在 1 到 ' + MAX_OPS + ' 之间（演示规模）');
+  if (lines.length !== m + 1) throw new Error('第一行写操作数 m，后面必须正好有 m 行 op k');
+  const ops = [];
+  for (let i = 1; i <= m; i++) {
+    const p = lines[i].trim().split(/\s+/).map(Number);
+    if (p.length !== 2 || p.some((x) => !Number.isInteger(x))) throw new Error('第 ' + i + ' 个操作需要两个整数 op k');
+    const [op, k] = p;
+    if (op !== 1 && op !== 3 && op !== 4) throw new Error('本演示只支持 op = 1（插入）、3（查排名）、4（查第 k 小）');
+    if (k < 1 || k > 99) throw new Error('k 需在 1 到 99 之间');
+    ops.push({ op, k });
+  }
+  return { ops };
+}
+
+function randomInput() {
+  const m = 6 + Math.floor(Math.random() * 4);
+  const rows = [];
+  let size = 0;
+  for (let i = 0; i < m; i++) {
+    const r = Math.random();
+    if (size === 0 || r < 0.6) { rows.push('1 ' + (1 + Math.floor(Math.random() * 25))); size++; }
+    else if (r < 0.82) rows.push('3 ' + (1 + Math.floor(Math.random() * 25)));
+    else rows.push('4 ' + (1 + Math.floor(Math.random() * size)));
+  }
+  return m + '\n' + rows.join('\n');
+}
+
+function buildFrames({ ops }) {
+  const ls = [0], rs = [0], siz = [0], cnt = [0], val = [0], ord = [0];
+  let root = 0, tot = 0, seed = 20261020, curOp = -1;
+  const frames = [];
+  const snap = (f) => frames.push(Object.assign({
+    note: '', lines: [1], ls: ls.slice(), rs: rs.slice(), siz: siz.slice(), cnt: cnt.slice(),
+    val: val.slice(), ord: ord.slice(), root, cur: 0, tmp: 0, path: [], ans: null, phase: 'init', opIndex: -1,
+  }, f));
+
+  const rnd = () => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return seed % 1000;
+  };
+  const push_up = (x) => { siz[x] = siz[ls[x]] + siz[rs[x]] + cnt[x]; };
+  const link = (parent, dir, u) => {
+    if (parent === 0) root = u;
+    else if (dir === 0) ls[parent] = u;
+    else rs[parent] = u;
+  };
+  const rrotate = (p, parent, dir) => {
+    const tmp = ls[p];
+    ls[p] = rs[tmp]; rs[tmp] = p;
+    siz[tmp] = siz[p];
+    push_up(p);
+    link(parent, dir, tmp);
+    snap({
+      note: 'ord(' + p + ') = ' + ord[p] + ' > ord(' + tmp + ') = ' + ord[tmp] + '，对 ' + p + ' 右旋：tmp = ls(' + p + ') = ' + tmp +
+        '，siz(' + tmp + ') = ' + siz[tmp] + '，siz(' + p + ') = ' + siz[p],
+      lines: [6, 8, 9, 10, 11, 12], cur: tmp, tmp: p, phase: 'rotate', opIndex: curOp, path: [],
+    });
+    return tmp;
+  };
+  const lrotate = (p, parent, dir) => {
+    const tmp = rs[p];
+    rs[p] = ls[tmp]; ls[tmp] = p;
+    siz[tmp] = siz[p];
+    push_up(p);
+    link(parent, dir, tmp);
+    snap({
+      note: 'ord(' + p + ') = ' + ord[p] + ' > ord(' + tmp + ') = ' + ord[tmp] + '，对 ' + p + ' 左旋：tmp = rs(' + p + ') = ' + tmp +
+        '，siz(' + tmp + ') = ' + siz[tmp] + '，siz(' + p + ') = ' + siz[p],
+      lines: [15, 17, 18, 19, 20, 21], cur: tmp, tmp: p, phase: 'rotate', opIndex: curOp, path: [],
+    });
+    return tmp;
+  };
+
+  const add = (p, k, parent, dir, path) => {
+    if (!p) {
+      p = ++tot;
+      ls[p] = rs[p] = 0;
+      siz[p] = cnt[p] = 1; val[p] = k; ord[p] = rnd();
+      link(parent, dir, p);
+      snap({ note: '空位置新建节点 ' + p + '：val = ' + k + '，cnt = siz = 1，ord = rand() = ' + ord[p], lines: [24, 26, 27, 28, 29, 30], cur: p, phase: 'add', opIndex: curOp, path: path.slice() });
+      return p;
+    }
+    siz[p]++;
+    if (val[p] === k) {
+      cnt[p]++;
+      snap({ note: 'val(' + p + ') = ' + k + ' 已存在：cnt 加到 ' + cnt[p] + '，siz = ' + siz[p], lines: [32, 33], cur: p, phase: 'add', opIndex: curOp, path: path.slice() });
+    } else if (val[p] > k) {
+      snap({ note: 'val(' + p + ') = ' + val[p] + ' > ' + k + '，递归 _add(ls(' + p + ') = ' + ls[p] + ', ' + k + ')', lines: [32, 34, 35], cur: p, phase: 'add', opIndex: curOp, path: path.concat([p]) });
+      add(ls[p], k, p, 0, path.concat([p]));
+      if (ord[p] > ord[ls[p]]) rrotate(p, parent, dir);
+    } else {
+      snap({ note: 'val(' + p + ') = ' + val[p] + ' < ' + k + '，递归 _add(rs(' + p + ') = ' + rs[p] + ', ' + k + ')', lines: [32, 38, 39], cur: p, phase: 'add', opIndex: curOp, path: path.concat([p]) });
+      add(rs[p], k, p, 1, path.concat([p]));
+      if (ord[p] > ord[rs[p]]) lrotate(p, parent, dir);
+    }
+    return p;
+  };
+
+  const rankOf = (p, k) => {
+    if (!p) {
+      snap({ note: '走到空节点：返回 1', lines: [77, 79], phase: 'rank', opIndex: curOp, path: [] });
+      return 1;
+    }
+    if (k < val[p]) {
+      snap({ note: 'k = ' + k + ' < val(' + p + ') = ' + val[p] + '：往左子树找', lines: [77, 80], cur: p, phase: 'rank', opIndex: curOp, path: [] });
+      return rankOf(ls[p], k);
+    }
+    if (k > val[p]) {
+      const inner = rankOf(rs[p], k);
+      const r = siz[ls[p]] + cnt[p] + inner;
+      snap({ note: 'k = ' + k + ' > val(' + p + ') = ' + val[p] + '：siz(ls) + cnt + 右子树结果 = ' + siz[ls[p]] + ' + ' + cnt[p] + ' + ' + inner + ' = ' + r, lines: [81], cur: p, phase: 'rank', opIndex: curOp, path: [] });
+      return r;
+    }
+    snap({ note: '相等：siz(ls(' + p + ')) + 1 = ' + siz[ls[p]] + ' + 1 = ' + (siz[ls[p]] + 1), lines: [82], ans: siz[ls[p]] + 1, cur: p, phase: 'rank', opIndex: curOp, path: [] });
+    return siz[ls[p]] + 1;
+  };
+
+  const numOf = (p, k) => {
+    if (!p) {
+      snap({ note: '第 ' + k + ' 小不存在（超过节点数）', lines: [85, 87], ans: -1, phase: 'kth', opIndex: curOp, path: [] });
+      return 0;
+    }
+    if (k <= siz[ls[p]]) {
+      snap({ note: 'k = ' + k + ' <= siz(ls(' + p + ')) = ' + siz[ls[p]] + '：第 ' + k + ' 小在左子树', lines: [85, 88], cur: p, phase: 'kth', opIndex: curOp, path: [] });
+      return numOf(ls[p], k);
+    }
+    if (k > siz[ls[p]] + cnt[p]) {
+      const nk = k - siz[ls[p]] - cnt[p];
+      snap({ note: 'k = ' + k + ' > siz(ls) + cnt = ' + (siz[ls[p]] + cnt[p]) + '：换成右子树里第 ' + nk + ' 小', lines: [89], cur: p, phase: 'kth', opIndex: curOp, path: [] });
+      return numOf(rs[p], nk);
+    }
+    snap({ note: 'siz(ls) < k <= siz(ls) + cnt：第 ' + k + ' 小就是 val(' + p + ') = ' + val[p], lines: [90], ans: val[p], cur: p, phase: 'kth', opIndex: curOp, path: [] });
+    return val[p];
+  };
+
+  for (let oi = 0; oi < ops.length; oi++) {
+    const { op, k } = ops[oi];
+    curOp = oi;
+    if (op === 1) add(root, k, 0, 0, []);
+    else if (op === 3) rankOf(root, k);
+    else numOf(root, k);
+  }
+  snap({ note: '操作结束：root = ' + root + '，树里共 ' + (root ? siz[root] : 0) + ' 个数', lines: [1, 2], root, phase: 'done', opIndex: ops.length - 1 });
+  return frames;
+}
+
+/* 只根据 frame 与 data 绘制 */
+function render(frame, stage, data) {
+  stage.innerHTML = '';
+  const box = document.createElement('div');
+
+  const list = document.createElement('div');
+  list.className = 'plist';
+  data.ops.forEach((o, i) => {
+    const c = document.createElement('span');
+    c.className = 'pchip' + (i === frame.opIndex ? ' on' : '');
+    c.textContent = (i + 1) + ': ' + (o.op === 1 ? '插入 ' : o.op === 3 ? '排名 ' : '第k小 ') + o.k;
+    list.appendChild(c);
+  });
+  box.appendChild(list);
+
+  const pos = {};
+  let leaf = 0;
+  const dx = 56, dy = 64;
+  (function dfs(u, d) {
+    if (!u) return;
+    dfs(frame.ls[u], d + 1);
+    pos[u] = { x: leaf++ * dx, y: d * dy };
+    dfs(frame.rs[u], d + 1);
+  })(frame.root, 0);
+  const ids = Object.keys(pos).map(Number);
+  if (ids.length) {
+    const pts = ids.map((u) => pos[u]);
+    let s = '<svg width="100%" height="' + (Math.max(...pts.map((p) => p.y)) + 82) + '" viewBox="' + svgBox(pts, 38) + '" role="img" aria-label="Treap">';
+    for (const u of ids) {
+      for (const [ch, tag] of [[frame.ls[u], 'L'], [frame.rs[u], 'R']]) {
+        if (!ch || !pos[ch]) continue;
+        s += edgeSvg(pos[u], pos[ch], { r: 22 });
+        s += textSvg((pos[u].x + pos[ch].x) / 2 + (tag === 'L' ? -9 : 9), (pos[u].y + pos[ch].y) / 2, tag, { size: 9, fill: 'var(--faint)' });
+      }
+    }
+    for (const u of ids) {
+      let stroke = 'var(--border)', width = 1.5;
+      if (frame.path.includes(u)) { stroke = 'var(--info)'; width = 2; }
+      if (u === frame.tmp) { stroke = 'var(--warn)'; width = 2.5; }
+      if (u === frame.cur) { stroke = 'var(--accent)'; width = 3; }
+      if (frame.ans !== null && u === frame.cur) { stroke = 'var(--ok)'; width = 3; }
+      const p = pos[u];
+      s += '<rect x="' + (p.x - 23) + '" y="' + (p.y - 20) + '" width="46" height="40" rx="8" fill="var(--surface)" stroke="' + stroke + '" stroke-width="' + width + '"/>';
+      s += textSvg(p.x, p.y - 2, String(frame.val[u]), { size: 14, weight: 700 });
+      s += textSvg(p.x, p.y + 11, 's' + frame.siz[u] + ' c' + frame.cnt[u], { size: 9, fill: 'var(--faint)' });
+      s += textSvg(p.x, p.y + 20, 'o' + frame.ord[u], { size: 8, fill: 'var(--faint)' });
+    }
+    s += '</svg>';
+    const wrap = document.createElement('div');
+    wrap.innerHTML = s;
+    box.appendChild(wrap);
+  } else {
+    const e = document.createElement('div');
+    e.className = 'sub-line';
+    e.textContent = '（空树）';
+    box.appendChild(e);
+  }
+
+  const eq = document.createElement('div');
+  eq.className = 'eq-line';
+  if (frame.ans !== null) eq.textContent = '本次操作答案：' + frame.ans;
+  else if (frame.phase === 'rotate') eq.textContent = '旋转后 ' + frame.cur + ' 上移，' + frame.tmp + ' 被压下去（Treap 用随机 ord 当小根堆）';
+  else if (frame.phase === 'done') eq.textContent = 'siz[root] = ' + (frame.root ? frame.siz[frame.root] : 0);
+  else eq.textContent = '节点：值 / s siz / c cnt / o ord（ord = rand()，演示用固定种子）';
+  box.appendChild(eq);
+  stage.appendChild(box);
+}
+/* === ALGO END === */
+
+
+/* ---------- 播放器（固定部分，不要修改） ---------- */
+const MAX_FRAMES = 5000;
+const $ = (id) => document.getElementById(id);
+let data = null, frames = [], idx = 0, timer = null;
+
+const codeSrcText = (($('code-src') || {}).textContent || '').replace(/^\r?\n/, '').replace(/\s+$/, '');
+const codeLines = codeSrcText.split(/\r?\n/);
+const hasCode = codeLines.length > 0 && codeLines.join('').trim() !== '';
+const KW = /^(?:alignas|alignof|and|and_eq|asm|auto|bitand|bitor|bool|break|case|catch|char|class|compl|concept|const|consteval|constexpr|constinit|continue|decltype|default|delete|do|double|else|enum|explicit|export|extern|false|float|for|friend|goto|if|inline|int|long|mutable|namespace|new|noexcept|not|not_eq|nullptr|operator|or|or_eq|private|protected|public|register|requires|return|short|signed|sizeof|static|static_assert|struct|switch|template|this|throw|true|try|typedef|typeid|typename|union|unsigned|using|virtual|void|volatile|wchar_t|while|xor|xor_eq|ll|ull|i64|u64|vector|string|map|set|queue|stack|pair|cin|cout|endl)$/;
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function highlightCpp(line) {
+  let i = 0, out = '', n = line.length;
+  const push = (cls, text) => {
+    const t = escapeHtml(text);
+    out += cls ? '<span class="' + cls + '">' + t + '</span>' : t;
+  };
+  while (i < n) {
+    if (line[i] === '/' && line[i + 1] === '/') { push('tok-cmt', line.slice(i)); break; }
+    if (line[i] === '/' && line[i + 1] === '*') {
+      const end = line.indexOf('*/', i + 2);
+      const j = end < 0 ? n : end + 2;
+      push('tok-cmt', line.slice(i, j));
+      i = j; continue;
+    }
+    if (line[i] === '"' || line[i] === "'") {
+      const q = line[i];
+      let j = i + 1;
+      while (j < n) {
+        if (line[j] === '\\') { j += 2; continue; }
+        if (line[j] === q) { j++; break; }
+        j++;
+      }
+      push('tok-str', line.slice(i, j));
+      i = j; continue;
+    }
+    if (line[i] === '#' && !line.slice(0, i).trim()) { push('tok-pp', line.slice(i)); break; }
+    if (/[A-Za-z_]/.test(line[i])) {
+      let j = i + 1;
+      while (j < n && /[A-Za-z0-9_]/.test(line[j])) j++;
+      const w = line.slice(i, j);
+      push(KW.test(w) ? 'tok-kw' : '', w);
+      i = j; continue;
+    }
+    if (/[0-9]/.test(line[i])) {
+      let j = i + 1;
+      while (j < n && /[0-9a-fA-FxXlLuU.]/.test(line[j])) j++;
+      push('tok-num', line.slice(i, j));
+      i = j; continue;
+    }
+    out += escapeHtml(line[i]);
+    i++;
+  }
+  return out || ' ';
+}
+const lineEls = [];
+if (hasCode) {
+  const box = $('code');
+  codeLines.forEach((text, i) => {
+    const row = document.createElement('div');
+    row.className = 'ln';
+    const num = document.createElement('b');
+    num.textContent = String(i + 1);
+    const span = document.createElement('span');
+    span.innerHTML = highlightCpp(text === '' ? ' ' : text);
+    row.appendChild(num); row.appendChild(span);
+    box.appendChild(row); lineEls.push(row);
+  });
+  $('codeFile').textContent = (META && META.file) || 'code.cpp';
+  $('codeLang').textContent = (META && META.lang) || 'cpp';
+  $('codeLines').textContent = codeLines.length + ' 行';
+} else {
+  $('codeWrap').style.display = 'none';
+  $('main').classList.remove('has-code');
+}
+let codeOpen = hasCode;
+if (hasCode) {
+  $('btnToggleCode').onclick = () => {
+    codeOpen = !codeOpen;
+    $('codeWrap').classList.toggle('collapsed', !codeOpen);
+    $('main').classList.toggle('has-code', codeOpen);
+    $('btnToggleCode').textContent = codeOpen ? '收起' : '展开';
+  };
+  let copiedTimer = 0;
+  $('btnCopyCode').onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(codeSrcText);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = codeSrcText;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    $('btnCopyCode').textContent = '已复制';
+    $('btnCopyCode').classList.add('copied');
+    clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(() => {
+      $('btnCopyCode').textContent = '复制';
+      $('btnCopyCode').classList.remove('copied');
+    }, 1600);
+  };
+}
+function highlight(lines) {
+  if (!hasCode) return;
+  lineEls.forEach((el) => el.classList.remove('hl'));
+  const hit = (lines || []).filter((n) => n >= 1 && n <= lineEls.length);
+  hit.forEach((n) => lineEls[n - 1].classList.add('hl'));
+  if (!hit.length) return;
+  const box = $('code'), first = lineEls[hit[0] - 1], last = lineEls[hit[hit.length - 1] - 1];
+  if (first.offsetTop < box.scrollTop) box.scrollTop = Math.max(0, first.offsetTop - 8);
+  else if (last.offsetTop + last.offsetHeight > box.scrollTop + box.clientHeight) {
+    box.scrollTop = last.offsetTop + last.offsetHeight - box.clientHeight + 8;
+  }
+}
+
+function setError(msg) { $('error').textContent = msg || ''; }
+function stop() { if (timer) { clearInterval(timer); timer = null; } $('btnPlay').textContent = '播放'; }
+function show(i) {
+  if (!frames.length) return;
+  idx = Math.max(0, Math.min(frames.length - 1, i));
+  const f = frames[idx];
+  $('note').textContent = f.note || '';
+  render(f, $('stage'), data);
+  highlight(f.lines);
+  $('stepInfo').textContent = (idx + 1) + ' / ' + frames.length;
+  $('progress').value = String(idx);
+}
+function play() {
+  if (!frames.length) return;
+  if (idx >= frames.length - 1) show(0);
+  stop();
+  $('btnPlay').textContent = '暂停';
+  const delay = 1100 - Number($('speed').value) * 100;
+  timer = setInterval(() => {
+    if (idx >= frames.length - 1) { stop(); return; }
+    show(idx + 1);
+  }, delay);
+}
+function load(text) {
+  stop(); setError('');
+  try {
+    const parsed = parseInput(text);
+    const built = buildFrames(parsed);
+    if (!built.length) throw new Error('没有可演示的步骤');
+    if (built.length > MAX_FRAMES) throw new Error('步骤过多（' + built.length + '），请缩小输入规模');
+    data = parsed; frames = built;
+    $('progress').max = String(frames.length - 1);
+    show(0);
+  } catch (e) {
+    setError(e && e.message ? e.message : String(e));
+  }
+}
+
+$('title').textContent = META.title;
+document.title = META.title + ' · 算法可视化';
+$('complexity').textContent = META.complexity;
+$('hint').textContent = META.inputHint;
+$('legend').innerHTML = META.legend.map((x) => '<span><i style="background:' + x.color + '"></i>' + x.text + '</span>').join('');
+$('input').value = DEFAULT_INPUT;
+
+$('btnPlay').onclick = () => (timer ? stop() : play());
+$('btnNext').onclick = () => { stop(); show(idx + 1); };
+$('btnPrev').onclick = () => { stop(); show(idx - 1); };
+$('btnReset').onclick = () => { stop(); show(0); };
+$('progress').oninput = (e) => { stop(); show(Number(e.target.value)); };
+$('speed').oninput = () => { if (timer) play(); };
+$('btnApply').onclick = () => load($('input').value);
+$('btnRandom').onclick = () => { $('input').value = randomInput(); load($('input').value); };
+
+document.addEventListener('keydown', (e) => {
+  if (e.target && /^(TEXTAREA|INPUT)$/.test(e.target.tagName) && e.target.type !== 'range') return;
+  if (e.code === 'Space') { e.preventDefault(); timer ? stop() : play(); }
+  else if (e.code === 'ArrowRight') { stop(); show(idx + 1); }
+  else if (e.code === 'ArrowLeft') { stop(); show(idx - 1); }
+  else if (e.code === 'Home') { stop(); show(0); }
+});
+
+window.addEventListener('message', (e) => {
+  const m = e.data;
+  if (!m || m.type !== 'xcpc-theme') return;
+  document.documentElement.dataset.theme = m.dark ? 'dark' : 'light';
+  if (typeof m.hue === 'number') {
+    document.documentElement.style.setProperty('--hue', String(m.hue));
+    document.documentElement.style.setProperty('--accent', 'hsl(' + m.hue + ', 55%, ' + (m.dark ? 55 : 40) + '%)');
+  }
+});
+if (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) {
+  document.documentElement.dataset.theme = 'dark';
+}
+
+load(DEFAULT_INPUT);
+</script>
+</body>
+</html>
