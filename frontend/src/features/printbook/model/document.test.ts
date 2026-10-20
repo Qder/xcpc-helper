@@ -22,7 +22,7 @@ const OPTIONS: PrintBookOptions = {
 
 const INFO: ResolvedTemplateInfo = {
   name: '快速幂',
-  cat: '数学',
+  cat: '数论',
   version_name: '快速幂',
   lang: 'cpp',
   file: 'qpow.cpp',
@@ -52,7 +52,7 @@ const tpl = (
 ): TemplateBlock => ({
   id: nid(),
   type: 'template',
-  template: '数学/快速幂',
+  template: '数论/快速幂',
   version: null,
   title: null,
   heading_level: 3,

@@ -47,7 +47,7 @@ blocks:
     title: '数学'
     heading_level: 1
   - type: template               # 模板引用块
-    template: '数学/快速幂'        # 模板 id（<分类>/<模板名>）
+    template: '数论/快速幂'        # 模板 id（<分类>/<模板名>）
     version: null                 # null=主版本（第一个版本，跟随模板变化）；'~'=显式顶层单版本；其余为副标签名
     title: null                   # 册内显示名覆盖；null=用模板原名，不影响模板库本身
     heading_level: 2              # 该节标题级别（h1-h6）
