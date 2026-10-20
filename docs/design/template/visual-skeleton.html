@@ -6,12 +6,16 @@
 <title>算法可视化</title>
 <style>
 :root {
+  --hue: 160;
   --bg: #f6f5f2; --surface: #ffffff; --text: #1f1d1a; --faint: #7a766f; --border: #e0ddd6;
-  --accent: hsl(160, 60%, 40%); --warn: #d97706; --ok: #16a34a; --bad: #dc2626; --info: #2563eb;
+  --hl: rgba(37, 99, 235, .14); --accent: hsl(var(--hue), 60%, 40%); --warn: #d97706; --ok: #16a34a; --bad: #dc2626; --info: #2563eb;
+  --code-bg: #1c1a17; --code-bg-head: #26231f; --code-border: #35302a; --code-text: #e6e1d6; --code-ln: #6d675c;
+  --code-comment: #7d7a68; --code-string: #d9a35f; --code-number: #c98fc0; --code-preproc: #86b8b1;
+  --code-kw: hsl(var(--hue), 72%, 68%);
 }
 :root[data-theme="dark"] {
   --bg: #191816; --surface: #23211e; --text: #ece9e3; --faint: #9a958c; --border: #37342f;
-  --accent: hsl(160, 55%, 55%); --warn: #f59e0b; --ok: #4ade80; --bad: #f87171; --info: #60a5fa;
+  --hl: rgba(96, 165, 250, .22); --accent: hsl(var(--hue), 55%, 55%); --warn: #f59e0b; --ok: #4ade80; --bad: #f87171; --info: #60a5fa;
 }
 * { box-sizing: border-box; }
 body { margin: 0; padding: 16px; background: var(--bg); color: var(--text);
@@ -21,6 +25,44 @@ h1 { font-size: 18px; margin: 0; }
 .chip { font-size: 12px; color: var(--faint); border: 1px solid var(--border); border-radius: 999px; padding: 0 10px; }
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 12px; }
 #stage { min-height: 220px; overflow: auto; }
+.main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+@media (min-width: 900px) { .main.has-code { grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); } }
+#codeWrap { min-width: 0; display: flex; flex-direction: column; background: var(--code-bg);
+  border: 1px solid var(--code-border); border-radius: 8px; overflow: hidden; color: var(--code-text); }
+.code-head { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 9px 12px; background: var(--code-bg-head); border-bottom: 1px solid var(--code-border); flex: none; }
+.code-status { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.status-led { width: 8px; height: 8px; border-radius: 50%; background: hsl(var(--hue), 72%, 62%); flex: none;
+  animation: led-pulse 2.2s ease-out infinite; }
+@keyframes led-pulse {
+  0% { box-shadow: 0 0 0 0 hsl(var(--hue), 72%, 62%, .45); }
+  70% { box-shadow: 0 0 0 7px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.code-file { font: 12px/1.4 ui-monospace, Consolas, "Cascadia Mono", monospace; color: var(--code-text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.code-lang { font: 10.5px/1.4 ui-monospace, Consolas, monospace; color: var(--code-ln);
+  border: 1px solid var(--code-border); border-radius: 4px; padding: 1px 6px; }
+.code-lines { font: 11px/1.4 ui-monospace, Consolas, monospace; color: var(--code-ln); }
+.code-actions { display: flex; gap: 6px; flex: none; }
+#codeWrap.collapsed #code { display: none; }
+#codeWrap.collapsed .code-head { border-bottom: none; }
+#codeWrap .copy-btn { display: inline-flex; align-items: center; height: 26px; padding: 0 10px;
+  border: 1px solid var(--code-border); border-radius: 6px; background: transparent; color: var(--code-text);
+  font-size: 12px; min-height: 26px; }
+#codeWrap .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+#codeWrap .copy-btn.copied { border-color: var(--accent); color: var(--accent); background: hsl(var(--hue), 60%, 40%, .12); }
+#code { max-height: 440px; overflow: auto; position: relative; background: var(--code-bg); padding: 8px 0 16px;
+  font: 13px/1.7 ui-monospace, Consolas, "Cascadia Mono", monospace; color: var(--code-text); }
+.ln { display: flex; white-space: pre; border-left: 3px solid transparent; padding-right: 16px; }
+.ln b { flex: none; width: 3.2em; text-align: right; padding-right: 12px; color: var(--code-ln); font-weight: 400; user-select: none; font-size: 11px; }
+.ln.hl { background: rgb(255 255 255 / 0.06); border-left-color: var(--accent); }
+.ln.hl b { color: var(--accent); }
+.tok-kw { color: var(--code-kw); }
+.tok-str { color: var(--code-string); }
+.tok-num { color: var(--code-number); }
+.tok-cmt { color: var(--code-comment); font-style: italic; }
+.tok-pp { color: var(--code-preproc); }
 #note { min-height: 24px; font-weight: 600; }
 #legend { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--faint); font-size: 12px; margin-top: 8px; }
 #legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
@@ -45,10 +87,27 @@ footer { color: var(--faint); font-size: 12px; }
   <span class="chip" id="stepInfo">0 / 0</span>
 </header>
 
-<div class="card">
-  <div id="note" aria-live="polite"></div>
-  <div id="stage"></div>
-  <div id="legend"></div>
+<div class="card main has-code" id="main">
+  <div class="viz">
+    <div id="note" aria-live="polite"></div>
+    <div id="stage"></div>
+    <div id="legend"></div>
+  </div>
+  <aside id="codeWrap">
+    <div class="code-head">
+      <div class="code-status">
+        <span class="status-led" aria-hidden="true"></span>
+        <span class="code-file" id="codeFile">code.cpp</span>
+        <span class="code-lang" id="codeLang">cpp</span>
+        <span class="code-lines" id="codeLines"></span>
+      </div>
+      <div class="code-actions">
+        <button type="button" class="copy-btn" id="btnCopyCode">复制</button>
+        <button type="button" class="copy-btn" id="btnToggleCode">收起</button>
+      </div>
+    </div>
+    <div id="code" role="region" aria-label="模板代码"></div>
+  </aside>
 </div>
 
 <div class="card controls" role="group" aria-label="播放控制">
@@ -73,12 +132,85 @@ footer { color: var(--faint); font-size: 12px; }
 
 <footer>教学演示，以模板代码为准。快捷键：空格 播放/暂停，← → 单步，Home 重置。</footer>
 
+<script type="text/plain" id="code-src">
+int bsearch(const vector<int>& a, int target) {
+    int l = 0, r = (int)a.size() - 1;
+    while (l <= r) {
+        int mid = (l + r) / 2;
+        if (a[mid] == target) return mid;
+        if (a[mid] < target) l = mid + 1;
+        else r = mid - 1;
+    }
+    return -1;
+}
+</script>
+
 <script>
+
+  //只调用,不要改写
+  function layoutCircle(n, cx, cy, r) {
+  return Array.from({ length: n }, (_, i) => {
+    const a = -Math.PI / 2 + (2 * Math.PI * i) / n;
+    return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
+  });
+}
+
+function layoutBinary(root, left, right, dx = 44, dy = 60) {
+  const pos = {};
+  let k = 0;
+  (function dfs(u, d) {
+    if (u == null) return;
+    dfs(left[u], d + 1);
+    pos[u] = { x: k++ * dx, y: d * dy };
+    dfs(right[u], d + 1);
+  })(root, 0);
+  return pos;
+}
+
+function layoutTree(root, children, dx = 48, dy = 64) {
+  const pos = {};
+  let leaf = 0;
+  (function dfs(u, d) {
+    const cs = children[u] || [];
+    if (cs.length === 0) { pos[u] = { x: leaf++ * dx, y: d * dy }; return; }
+    cs.forEach((c) => dfs(c, d + 1));
+    pos[u] = { x: (pos[cs[0]].x + pos[cs[cs.length - 1]].x) / 2, y: d * dy };
+  })(root, 0);
+  return pos;
+}
+
+function edgeSvg(a, b, o = {}) {
+  const { r = 18, directed = false, color = 'var(--faint)', width = 2, dash = '' } = o;
+  const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len;
+  const x1 = a.x + ux * r, y1 = a.y + uy * r, x2 = b.x - ux * r, y2 = b.y - uy * r;
+  let s = '<line x1="' + x1 + '" y1="' + y1 + '" x2="' + x2 + '" y2="' + y2 + '" stroke="' + color +
+    '" stroke-width="' + width + '"' + (dash ? ' stroke-dasharray="' + dash + '"' : '') + '/>';
+  if (directed) {
+    const hx = x2 - ux * 9, hy = y2 - uy * 9;
+    s += '<polygon points="' + x2 + ',' + y2 + ' ' + (hx - uy * 5) + ',' + (hy + ux * 5) + ' ' +
+      (hx + uy * 5) + ',' + (hy - ux * 5) + '" fill="' + color + '"/>';
+  }
+  return s;
+}
+
+function svgBox(points, pad = 30) {
+  const xs = points.map((p) => p.x), ys = points.map((p) => p.y);
+  const x0 = Math.min(...xs) - pad, y0 = Math.min(...ys) - pad;
+  return x0 + ' ' + y0 + ' ' + (Math.max(...xs) + pad - x0) + ' ' + (Math.max(...ys) + pad - y0);
+}
+
+function textSvg(x, y, text, o = {}) {
+  const { size = 12, weight = 400, fill = 'var(--text)', anchor = 'middle' } = o;
+  return '<text x="' + x + '" y="' + y + '" font-size="' + size + '" font-weight="' + weight + '" text-anchor="' + anchor +
+    '" fill="' + fill + '" stroke="var(--surface)" stroke-width="3" paint-order="stroke" stroke-linejoin="round">' + text + '</text>';
+}
 /* === ALGO START：只允许修改这一段（示例：二分查找） === */
 const META = {
   title: '二分查找',
   complexity: '时间 O(log n)　空间 O(1)',
   inputHint: '第一行：升序数组；第二行：目标值',
+  file: 'code.cpp',
+  lang: 'cpp',
   legend: [
     { color: 'var(--info)', text: '[l, r] 搜索区间' },
     { color: 'var(--warn)', text: 'mid' },
@@ -109,27 +241,27 @@ function randomInput() {
   return arr.join(' ') + '\n' + target;
 }
 
-/* 每一帧必须是自包含的状态快照（不依赖前一帧），note 为这一步的中文说明 */
+/* 每一帧必须是自包含的状态快照（不依赖前一帧）：note 为这一步的中文说明，lines 为这一步正在执行的代码行（对应 code-src，从 1 开始） */
 function buildFrames({ arr, target }) {
   const frames = [];
   let l = 0, r = arr.length - 1;
-  frames.push({ note: '目标值 ' + target + '，初始区间 [0, ' + r + ']', l, r, mid: -1, found: -1 });
+  frames.push({ note: '目标值 ' + target + '，初始区间 [0, ' + r + ']', l, r, mid: -1, found: -1, lines: [2] });
   while (l <= r) {
     const mid = (l + r) >> 1;
-    frames.push({ note: 'mid = ' + mid + '，a[mid] = ' + arr[mid], l, r, mid, found: -1 });
+    frames.push({ note: 'mid = ' + mid + '，a[mid] = ' + arr[mid], l, r, mid, found: -1, lines: [3, 4] });
     if (arr[mid] === target) {
-      frames.push({ note: '命中：下标 ' + mid, l, r, mid, found: mid });
+      frames.push({ note: '命中：下标 ' + mid, l, r, mid, found: mid, lines: [5] });
       return frames;
     }
     if (arr[mid] < target) {
       l = mid + 1;
-      frames.push({ note: 'a[mid] < 目标，l = mid + 1 = ' + l, l, r, mid: -1, found: -1 });
+      frames.push({ note: 'a[mid] < 目标，l = mid + 1 = ' + l, l, r, mid: -1, found: -1, lines: [6] });
     } else {
       r = mid - 1;
-      frames.push({ note: 'a[mid] > 目标，r = mid - 1 = ' + r, l, r, mid: -1, found: -1 });
+      frames.push({ note: 'a[mid] > 目标，r = mid - 1 = ' + r, l, r, mid: -1, found: -1, lines: [7] });
     }
   }
-  frames.push({ note: '区间为空，未找到', l, r, mid: -1, found: -1 });
+  frames.push({ note: '区间为空，未找到', l, r, mid: -1, found: -1, lines: [9] });
   return frames;
 }
 
@@ -160,6 +292,119 @@ const MAX_FRAMES = 5000;
 const $ = (id) => document.getElementById(id);
 let data = null, frames = [], idx = 0, timer = null;
 
+const codeSrcText = (($('code-src') || {}).textContent || '').replace(/^\r?\n/, '').replace(/\s+$/, '');
+const codeLines = codeSrcText.split(/\r?\n/);
+const hasCode = codeLines.length > 0 && codeLines.join('').trim() !== '';
+const KW = /^(?:alignas|alignof|and|and_eq|asm|auto|bitand|bitor|bool|break|case|catch|char|class|compl|concept|const|consteval|constexpr|constinit|continue|decltype|default|delete|do|double|else|enum|explicit|export|extern|false|float|for|friend|goto|if|inline|int|long|mutable|namespace|new|noexcept|not|not_eq|nullptr|operator|or|or_eq|private|protected|public|register|requires|return|short|signed|sizeof|static|static_assert|struct|switch|template|this|throw|true|try|typedef|typeid|typename|union|unsigned|using|virtual|void|volatile|wchar_t|while|xor|xor_eq|ll|ull|i64|u64|vector|string|map|set|queue|stack|pair|cin|cout|endl)$/;
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function highlightCpp(line) {
+  let i = 0, out = '', n = line.length;
+  const push = (cls, text) => {
+    const t = escapeHtml(text);
+    out += cls ? '<span class="' + cls + '">' + t + '</span>' : t;
+  };
+  while (i < n) {
+    if (line[i] === '/' && line[i + 1] === '/') { push('tok-cmt', line.slice(i)); break; }
+    if (line[i] === '/' && line[i + 1] === '*') {
+      const end = line.indexOf('*/', i + 2);
+      const j = end < 0 ? n : end + 2;
+      push('tok-cmt', line.slice(i, j));
+      i = j; continue;
+    }
+    if (line[i] === '"' || line[i] === "'") {
+      const q = line[i];
+      let j = i + 1;
+      while (j < n) {
+        if (line[j] === '\\') { j += 2; continue; }
+        if (line[j] === q) { j++; break; }
+        j++;
+      }
+      push('tok-str', line.slice(i, j));
+      i = j; continue;
+    }
+    if (line[i] === '#' && !line.slice(0, i).trim()) { push('tok-pp', line.slice(i)); break; }
+    if (/[A-Za-z_]/.test(line[i])) {
+      let j = i + 1;
+      while (j < n && /[A-Za-z0-9_]/.test(line[j])) j++;
+      const w = line.slice(i, j);
+      push(KW.test(w) ? 'tok-kw' : '', w);
+      i = j; continue;
+    }
+    if (/[0-9]/.test(line[i])) {
+      let j = i + 1;
+      while (j < n && /[0-9a-fA-FxXlLuU.]/.test(line[j])) j++;
+      push('tok-num', line.slice(i, j));
+      i = j; continue;
+    }
+    out += escapeHtml(line[i]);
+    i++;
+  }
+  return out || ' ';
+}
+const lineEls = [];
+if (hasCode) {
+  const box = $('code');
+  codeLines.forEach((text, i) => {
+    const row = document.createElement('div');
+    row.className = 'ln';
+    const num = document.createElement('b');
+    num.textContent = String(i + 1);
+    const span = document.createElement('span');
+    span.innerHTML = highlightCpp(text === '' ? ' ' : text);
+    row.appendChild(num); row.appendChild(span);
+    box.appendChild(row); lineEls.push(row);
+  });
+  $('codeFile').textContent = (META && META.file) || 'code.cpp';
+  $('codeLang').textContent = (META && META.lang) || 'cpp';
+  $('codeLines').textContent = codeLines.length + ' 行';
+} else {
+  $('codeWrap').style.display = 'none';
+  $('main').classList.remove('has-code');
+}
+let codeOpen = hasCode;
+if (hasCode) {
+  $('btnToggleCode').onclick = () => {
+    codeOpen = !codeOpen;
+    $('codeWrap').classList.toggle('collapsed', !codeOpen);
+    $('main').classList.toggle('has-code', codeOpen);
+    $('btnToggleCode').textContent = codeOpen ? '收起' : '展开';
+  };
+  let copiedTimer = 0;
+  $('btnCopyCode').onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(codeSrcText);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = codeSrcText;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    $('btnCopyCode').textContent = '已复制';
+    $('btnCopyCode').classList.add('copied');
+    clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(() => {
+      $('btnCopyCode').textContent = '复制';
+      $('btnCopyCode').classList.remove('copied');
+    }, 1600);
+  };
+}
+function highlight(lines) {
+  if (!hasCode) return;
+  lineEls.forEach((el) => el.classList.remove('hl'));
+  const hit = (lines || []).filter((n) => n >= 1 && n <= lineEls.length);
+  hit.forEach((n) => lineEls[n - 1].classList.add('hl'));
+  if (!hit.length) return;
+  const box = $('code'), first = lineEls[hit[0] - 1], last = lineEls[hit[hit.length - 1] - 1];
+  if (first.offsetTop < box.scrollTop) box.scrollTop = Math.max(0, first.offsetTop - 8);
+  else if (last.offsetTop + last.offsetHeight > box.scrollTop + box.clientHeight) {
+    box.scrollTop = last.offsetTop + last.offsetHeight - box.clientHeight + 8;
+  }
+}
+
 function setError(msg) { $('error').textContent = msg || ''; }
 function stop() { if (timer) { clearInterval(timer); timer = null; } $('btnPlay').textContent = '播放'; }
 function show(i) {
@@ -168,6 +413,7 @@ function show(i) {
   const f = frames[idx];
   $('note').textContent = f.note || '';
   render(f, $('stage'), data);
+  highlight(f.lines);
   $('stepInfo').textContent = (idx + 1) + ' / ' + frames.length;
   $('progress').value = String(idx);
 }
@@ -226,6 +472,7 @@ window.addEventListener('message', (e) => {
   if (!m || m.type !== 'xcpc-theme') return;
   document.documentElement.dataset.theme = m.dark ? 'dark' : 'light';
   if (typeof m.hue === 'number') {
+    document.documentElement.style.setProperty('--hue', String(m.hue));
     document.documentElement.style.setProperty('--accent', 'hsl(' + m.hue + ', 55%, ' + (m.dark ? 55 : 40) + '%)');
   }
 });
