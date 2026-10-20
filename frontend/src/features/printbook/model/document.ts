@@ -36,6 +36,7 @@ export interface DocMeta {
   page: string | null
   updated: string | null
   priority: number
+  difficulty: number
 }
 
 interface SectionBase {
@@ -187,6 +188,7 @@ export function buildDocument(input: BuildInput): BookDocument {
               page: info.page,
               updated: info.updated,
               priority: info.priority,
+              difficulty: info.difficulty,
             }
           : null
         tocEntries.push({ anchor, title, level: block.heading_level })

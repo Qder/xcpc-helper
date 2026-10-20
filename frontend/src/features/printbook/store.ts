@@ -92,6 +92,7 @@ function resolveLocal(templateId: string, version: string | null): ResolvedTempl
     page: target.page,
     updated: target.updated,
     priority: target.priority,
+    difficulty: target.difficulty,
   }
 }
 

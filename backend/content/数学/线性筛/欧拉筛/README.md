@@ -10,6 +10,7 @@ examples:
 - label: 例题1
   url: https://www.luogu.com.cn/problem/P3383
 priority: 7
+difficulty: 2
 ---
 
 欧拉筛实现的线性筛素数，也可以辅助实现求 phi 与 mu。

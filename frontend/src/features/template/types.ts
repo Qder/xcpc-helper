@@ -2,7 +2,7 @@
 
 import type { LangId } from '@/shared/types'
 
-export type SortMode = 'updated' | 'name' | 'priority'
+export type SortMode = 'updated' | 'name' | 'priority' | 'difficulty'
 
 export interface Category {
   /** 分类目录名；'all' 为前端内置的"全部"选项 */
@@ -26,6 +26,7 @@ export interface TemplateSummary {
   page: string | null
   updated: string | null
   priority: number
+  difficulty: number
   variant_count: number
   /** 至少一个版本存在 visual.html */
   has_visual: boolean
@@ -51,6 +52,7 @@ export interface TemplateVariant {
   examples: ExampleLink[]
   updated: string | null
   priority: number
+  difficulty: number
   has_visual: boolean
 }
 
@@ -82,6 +84,7 @@ export interface VersionMetaPayload {
   page: string | null
   examples: ExampleLink[]
   priority: number
+  difficulty: number
 }
 
 /** 新建/更新版本请求体：与后端 VersionUpsert 对应 */

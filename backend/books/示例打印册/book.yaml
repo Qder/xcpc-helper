@@ -60,3 +60,8 @@ blocks:
   template: 数据结构/并查集
   version: class 封装普通版
   heading_level: 3
+- id: pb-1792490188224-1
+  type: template
+  template: 图论/2SAT
+  version: 2SAT
+  heading_level: 3

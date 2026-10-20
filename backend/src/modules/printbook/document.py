@@ -110,6 +110,7 @@ def _resolve_template(
         page=target.page,
         updated=target.updated,
         priority=target.priority,
+        difficulty=target.difficulty,
     )
 
 

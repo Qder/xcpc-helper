@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, ConfigDict, Field
 
 DEFAULT_PRIORITY = 2
+DEFAULT_DIFFICULTY = 5
 MAX_EXAMPLES = 12
 
 
@@ -43,6 +44,7 @@ class ReadmeMeta(BaseModel):
     page: str | None = None
     examples: list[ExampleLink] = Field(default_factory=list)
     priority: int = DEFAULT_PRIORITY
+    difficulty: int = DEFAULT_DIFFICULTY
 
 
 class VersionNode(BaseModel):

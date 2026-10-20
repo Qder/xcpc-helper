@@ -2,6 +2,7 @@
 updated: '2026-08-10'
 source: 洛谷 P3371
 page: https://www.luogu.com.cn/problem/P3371
+difficulty: 4
 ---
 
 # 关于 SPFA

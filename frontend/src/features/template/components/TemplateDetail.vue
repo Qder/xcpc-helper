@@ -42,7 +42,7 @@ const code = computed(() => props.variant?.code ?? props.detail.variants[0]?.cod
 const file = computed(() => props.variant?.file ?? props.detail.file ?? 'code')
 const lang = computed<LangId>(() => props.variant?.lang ?? props.detail.lang ?? 'cpp')
 
-// 元信息（tags/来源/更新于/优先级）随版本切换：选中版本时用该版本的值，
+// 元信息（tags/来源/更新于/优先级/难度）随版本切换：选中版本时用该版本的值，
 // 即使为空也不回退模板级聚合值；未选中版本（无 variants 数据）时回退模板级
 const shownTags = computed(() => (props.variant ? props.variant.tags : props.detail.tags))
 const shownSrc = computed(() => (props.variant ? props.variant.src : props.detail.src))
@@ -53,6 +53,9 @@ const shownUpdated = computed(() =>
 )
 const shownPriority = computed(() =>
   props.variant ? props.variant.priority : props.detail.priority,
+)
+const shownDifficulty = computed(() =>
+  props.variant ? props.variant.difficulty : props.detail.difficulty,
 )
 
 // 说明框随版本切换显示对应版本的 README 正文；本地内容可信，直接渲染
@@ -122,6 +125,7 @@ const desc = computed(() => props.variant?.body ?? props.detail.desc)
         </span>
         <span v-if="shownUpdated" class="meta-item"><b>更新于</b>{{ shownUpdated }}</span>
         <span class="meta-item priority"><b>优先级</b>{{ shownPriority }}</span>
+        <span class="meta-item"><b>难度</b>{{ shownDifficulty }}</span>
       </div>
       <div v-if="shownExamples.length" class="detail-examples">
         <b>例题</b>

@@ -23,6 +23,7 @@ export interface ResolvedTemplateInfo {
   page: string | null
   updated: string | null
   priority: number
+  difficulty: number
 }
 
 export interface HeadingBlock extends BookBlockBase {

@@ -53,6 +53,7 @@ examples:
   - label: CF 26A
     url: https://codeforces.com/problemset/problem/26/A
 priority: 5
+difficulty: 6
 ---
 
 正文说明...
@@ -64,11 +65,12 @@ priority: 5
 - **page**：非必填。填写时 **source 必须填写**，source 渲染为指向该网址的超链接（主题色）；
 - **examples**：非必填。额外例题外链列表，每项 `label`（可空）+ `url`（必填，仅 `http`/`https`）。最多 12 条；非法项扫描时丢弃并 warning。详情页在小标题与代码之间用胶囊展示，点击新标签打开；label 为空时前端用 URL 的题号或主机名。列表摘要、全文检索、打印册都不带该字段。编辑版本表单在「来源链接」下方可增减行。空列表不写入 front matter。无主源题也可以只填 examples；
 - **priority**：非必填，缺省为 2。数值越大显示优先级越高；
+- **difficulty**：非必填，缺省为 5。取值 1–9，数值越大越难；按难度排序时简单在前；
 - **正文说明**：非必填。渲染为代码底部的说明框，支持 Markdown 与 KaTeX 公式。
 
 模板标题直接取自目录名，无需在元数据中重复声明；规范之外的字段（如历史遗留的 title）静默忽略，不产生诊断。
 
-多版本模板在列表页展示聚合元信息：更新日期取所有版本最晚值，优先级取最大值，tags 取并集；详情页切换版本时，小标签与说明框跟随当前版本各自的元信息。
+多版本模板在列表页展示聚合元信息：更新日期取所有版本最晚值，优先级与难度取最大值，tags 取并集；详情页切换版本时，小标签与说明框跟随当前版本各自的元信息。
 
 ## 4. 维护方式
 
@@ -83,13 +85,13 @@ priority: 5
    - 列表工具栏「批量删除」进入多选：勾选当前列表中的主标签，确认后物理删除整棵目录树（含全部版本，不可找回）。
 
 **空主标签**：完全为空的模板目录是合法状态（可视化新建的占位模板），
-正常进入列表与详情（无版本字段为空、优先级取默认值 2），不产生诊断；
+正常进入列表与详情（无版本字段为空、优先级取默认值 2、难度取默认值 5），不产生诊断；
 目录内有内容却凑不出任何版本仍属于格式错误，保留 error 诊断。
 
 可视化写操作的约定：
 
 - 名称统一校验（规则见 [../conventions.md](../conventions.md)），中文正常放行；
-- README 由表单数据全量生成：缺省字段不写入 front matter，priority 为默认值 2 时省略；规范外的历史字段在首次编辑保存后丢弃；
+- README 由表单数据全量生成：缺省字段不写入 front matter，priority 为默认值 2、difficulty 为默认值 5 时省略；规范外的历史字段在首次编辑保存后丢弃；
 - 新建版本经 .tmp 暂存目录原子就位，更新走临时文件 + 原子替换；删除为物理删除（前端确认弹窗明确提示不可找回）；
 - 删除非空模板被拒绝（409），需先删除其所有版本；批量删除走整棵树删除，确认弹窗明确提示不可找回；删除/移动后空分类目录自动清理；
 - 顶层单版本（代码直接在模板目录下）在写 API 的 URL 中用保留字 `~` 寻址；
@@ -100,7 +102,7 @@ priority: 5
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/api/templates` | 模板列表（摘要），支持 `category` / `tags` / `keyword`（FTS5 搜标题/标签/说明/代码，结果按相关度排序，用户所选 `sort` 作同分决胜）/ `sort`（updated/name/priority）/ `has_visual=true`（只返回至少一个版本有 visual.html 的模板）；摘要含 `has_visual` |
+| GET | `/api/templates` | 模板列表（摘要），支持 `category` / `tags` / `keyword`（FTS5 搜标题/标签/说明/代码，结果按相关度排序，用户所选 `sort` 作同分决胜）/ `sort`（updated/name/priority/difficulty）/ `has_visual=true`（只返回至少一个版本有 visual.html 的模板）；摘要含 `has_visual`、`difficulty` |
 | GET | `/api/templates/{id}` | 模板详情，含全部副标签版本（代码 + README 正文）；每个 variant 含 `has_visual` |
 | GET | `/api/templates/{category}/{name}/versions/{version}/visual` | 返回该版本 `visual.html`（`~` 表示顶层单版本）；无文件 404；超过 `visual_max_bytes` 413；带沙箱 CSP，详见 [visualizer.md](visualizer.md) |
 | GET | `/api/categories` | 分类列表（从 content/ 一级目录自动派生） |

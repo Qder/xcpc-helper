@@ -111,6 +111,7 @@ class TemplateService:
                     datetime.date.fromisoformat(v["updated"]) if v["updated"] else None
                 ),
                 priority=v["priority"],
+                difficulty=v["difficulty"],
                 has_visual=bool(v["has_visual"]),
             )
             for v in repository.get_versions(db, template_id)
@@ -370,6 +371,7 @@ def _row_to_summary(row: sqlite3.Row) -> TemplateSummary:
         page=row["page"],
         updated=updated,
         priority=row["priority"],
+        difficulty=row["difficulty"],
         variant_count=row["variant_count"],
         has_visual=bool(row["has_visual"]),
     )
@@ -384,6 +386,9 @@ def _sort_summaries(items: list[TemplateSummary], sort: SortMode) -> list[Templa
             key=lambda t: (t.updated is not None, t.updated or datetime.date.min),
             reverse=True,
         )
+    if sort == "difficulty":
+        # 难度升序（简单在前），同分按名称
+        return sorted(items, key=lambda t: (t.difficulty, t.name.lower()))
     # priority：优先级降序，其次按更新日期
     return sorted(
         items,

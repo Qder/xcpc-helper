@@ -65,6 +65,7 @@ def build_templates_archive(templates: list[TemplateNode]) -> bytes:
                     for item in version.meta.examples
                 ],
                 priority=version.meta.priority,
+                difficulty=version.meta.difficulty,
             )
             readme = render_readme(meta, version.body)
             files.append((f"{base}/{vdir}/README.md", readme.encode("utf-8")))

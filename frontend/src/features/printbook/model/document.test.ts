@@ -33,6 +33,7 @@ const INFO: ResolvedTemplateInfo = {
   page: null,
   updated: '2026-07-05',
   priority: 5,
+  difficulty: 2,
 }
 
 let idSeq = 0

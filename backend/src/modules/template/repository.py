@@ -15,7 +15,12 @@ import sqlite3
 from pathlib import Path
 
 from core.database import get_connection
-from modules.template.models import DEFAULT_PRIORITY, ScanResult, TemplateNode
+from modules.template.models import (
+    DEFAULT_DIFFICULTY,
+    DEFAULT_PRIORITY,
+    ScanResult,
+    TemplateNode,
+)
 
 logger = logging.getLogger("xcpc.repository")
 
@@ -28,6 +33,7 @@ CREATE TABLE templates (
     source TEXT,
     page TEXT,
     priority INTEGER NOT NULL,
+    difficulty INTEGER NOT NULL,
     updated TEXT,
     lang TEXT,
     file TEXT,
@@ -54,6 +60,7 @@ CREATE TABLE versions (
     page TEXT,
     examples TEXT NOT NULL,
     priority INTEGER NOT NULL,
+    difficulty INTEGER NOT NULL,
     updated TEXT,
     has_visual INTEGER NOT NULL
 )
@@ -76,7 +83,7 @@ def _try_create_fts(conn: sqlite3.Connection) -> bool:
 def _template_row(template: TemplateNode) -> tuple:
     """将扫描结果折算为模板级字段：主版本取第一个，标签取并集，日期取最新。
 
-    空模板（没有任何版本）时主版本相关字段为 None，优先级取默认值。
+    空模板（没有任何版本）时主版本相关字段为 None，优先级/难度取默认值。
     """
     primary = template.versions[0] if template.versions else None
     tags: list[str] = []
@@ -88,6 +95,9 @@ def _template_row(template: TemplateNode) -> tuple:
     updated = max(dates).isoformat() if dates else None
     priority = max(
         (v.meta.priority for v in template.versions), default=DEFAULT_PRIORITY
+    )
+    difficulty = max(
+        (v.meta.difficulty for v in template.versions), default=DEFAULT_DIFFICULTY
     )
 
     search_text = " ".join(
@@ -103,6 +113,7 @@ def _template_row(template: TemplateNode) -> tuple:
         primary.meta.source if primary else None,
         primary.meta.page if primary else None,
         priority,
+        difficulty,
         updated,
         primary.lang if primary else None,
         primary.file if primary else None,
@@ -125,7 +136,7 @@ def rebuild_index(db_path: Path, scan: ScanResult) -> None:
 
         for template in scan.templates:
             conn.execute(
-                "INSERT INTO templates VALUES (" + ",".join("?" * 14) + ")",
+                "INSERT INTO templates VALUES (" + ",".join("?" * 15) + ")",
                 _template_row(template),
             )
             for order, version in enumerate(template.versions):
@@ -133,7 +144,7 @@ def rebuild_index(db_path: Path, scan: ScanResult) -> None:
                     f"{template.id}/{version.slug}" if version.slug else template.id
                 )
                 conn.execute(
-                    "INSERT INTO versions VALUES (" + ",".join("?" * 16) + ")",
+                    "INSERT INTO versions VALUES (" + ",".join("?" * 17) + ")",
                     (
                         version_id,
                         template.id,
@@ -152,6 +163,7 @@ def rebuild_index(db_path: Path, scan: ScanResult) -> None:
                             ensure_ascii=False,
                         ),
                         version.meta.priority,
+                        version.meta.difficulty,
                         version.meta.updated.isoformat() if version.meta.updated else None,
                         int(version.has_visual),
                     ),

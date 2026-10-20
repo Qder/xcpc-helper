@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-SortMode = Literal["updated", "name", "priority"]
+SortMode = Literal["updated", "name", "priority", "difficulty"]
 
 
 class CategoryInfo(BaseModel):
@@ -27,6 +27,7 @@ class TemplateSummary(BaseModel):
     page: str | None
     updated: datetime.date | None
     priority: int
+    difficulty: int
     variant_count: int
     has_visual: bool = False  # 至少一个版本存在 visual.html
 
@@ -53,6 +54,7 @@ class TemplateVersion(BaseModel):
     examples: list[ExampleLink] = Field(default_factory=list)
     updated: datetime.date | None
     priority: int
+    difficulty: int
     has_visual: bool = False
 
 
@@ -111,6 +113,7 @@ class VersionMetaInput(BaseModel):
     page: str | None = None
     examples: list[ExampleLink] = Field(default_factory=list)
     priority: int = 2
+    difficulty: int = 5
 
 
 class VisualUpsert(BaseModel):

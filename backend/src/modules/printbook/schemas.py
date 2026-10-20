@@ -21,6 +21,7 @@ class ResolvedTemplateInfo(BaseModel):
     page: str | None
     updated: datetime.date | None
     priority: int
+    difficulty: int
 
 
 class HeadingBlock(BaseModel):

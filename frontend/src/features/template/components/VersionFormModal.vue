@@ -81,6 +81,7 @@ const form = reactive({
   page: '',
   examples: [] as ExampleLink[],
   priority: 2,
+  difficulty: 5,
   ext: 'cpp',
   fileName: '',
   code: '',
@@ -117,6 +118,7 @@ function initForm(): void {
       form.page = v.page ?? ''
       form.examples = (v.examples ?? []).map((item) => ({ ...item }))
       form.priority = v.priority
+      form.difficulty = v.difficulty
       // 扩展名以文件名后缀为准（.h/.hpp 的 lang 也是 cpp，直接取 lang 会错位）
       const suffix = v.file.includes('.')
         ? (v.file.split('.').pop()?.toLowerCase() ?? '')
@@ -133,6 +135,7 @@ function initForm(): void {
       form.page = ''
       form.examples = []
       form.priority = 2
+      form.difficulty = 5
       form.ext = 'cpp'
       form.fileName = ''
       form.code = ''
@@ -202,7 +205,8 @@ async function submit(): Promise<void> {
       examples: form.examples
         .map((item) => ({ label: item.label.trim(), url: item.url.trim() }))
         .filter((item) => item.url),
-      priority: form.priority,
+      priority: form.priority ?? 2,
+      difficulty: form.difficulty ?? 5,
     },
     body: form.readme,
   }
@@ -262,6 +266,14 @@ async function submit(): Promise<void> {
         <n-form-item label="优先级（1-9）">
           <n-input-number
             v-model:value="form.priority"
+            :min="1"
+            :max="9"
+            style="width: 100%"
+          />
+        </n-form-item>
+        <n-form-item label="难度（1-9）">
+          <n-input-number
+            v-model:value="form.difficulty"
             :min="1"
             :max="9"
             style="width: 100%"

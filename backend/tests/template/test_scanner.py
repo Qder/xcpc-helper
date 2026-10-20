@@ -37,6 +37,7 @@ def test_single_version_template(content_dir: Path) -> None:
     assert version.name == "sieve"  # 显示名取自目录名
     assert version.lang == "cpp"
     assert version.meta.priority == 5
+    assert version.meta.difficulty == 7
     assert "最小质因子" in version.body
 
 

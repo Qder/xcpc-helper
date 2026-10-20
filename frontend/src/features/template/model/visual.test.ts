@@ -25,6 +25,7 @@ function summary(partial: Partial<TemplateSummary> & Pick<TemplateSummary, 'id' 
     page: null,
     updated: null,
     priority: 2,
+    difficulty: 5,
     variant_count: 1,
     has_visual: true,
     ...partial,
@@ -43,6 +44,7 @@ function variant(partial: Partial<TemplateVariant> & Pick<TemplateVariant, 'id' 
     examples: [],
     updated: null,
     priority: 2,
+    difficulty: 5,
     has_visual: true,
     ...partial,
   }

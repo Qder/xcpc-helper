@@ -114,6 +114,7 @@ function isTemplate(sec: DocSection): sec is TemplateSection {
           </span>
           <span v-if="sec.meta.updated"><b>更新</b>{{ sec.meta.updated }}</span>
           <span><b>优先级</b>{{ sec.meta.priority }}</span>
+          <span><b>难度</b>{{ sec.meta.difficulty }}</span>
         </div>
         <!-- eslint-disable-next-line vue/no-v-html -->
         <div class="pb-code-wrap" v-html="codeHtml(sec)"></div>

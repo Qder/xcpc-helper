@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { CircleHelp, FileUp, Play, Search } from 'lucide-vue-next'
 import { NAlert, NButton, NEmpty, NInput, NSelect, NSpin } from 'naive-ui'
@@ -7,17 +7,25 @@ import VisualHelpModal from '@/features/template/components/VisualHelpModal.vue'
 import VisualImportModal from '@/features/template/components/VisualImportModal.vue'
 import { fetchCategories, fetchTemplates, type ApiCategory } from '@/features/template/api'
 import { filterVisualSummaries, splitTemplateId, visualViewerPath } from '@/features/template/model/visual'
-import type { TemplateSummary } from '@/features/template/types'
+import type { SortMode, TemplateSummary } from '@/features/template/types'
 
 const router = useRouter()
 const keyword = ref('')
 const category = ref('all')
+const sortMode = ref<SortMode>('priority')
 const loading = ref(false)
 const errorText = ref<string | null>(null)
 const items = ref<TemplateSummary[]>([])
 const cats = ref<ApiCategory[]>([])
 const showImport = ref(false)
 const showHelp = ref(false)
+
+const sortOptions = [
+  { label: '按优先级', value: 'priority' },
+  { label: '按难度', value: 'difficulty' },
+  { label: '按名称', value: 'name' },
+  { label: '按更新时间', value: 'updated' },
+]
 
 const categoryOptions = computed(() => [
   { label: '全部分类', value: 'all' },
@@ -31,7 +39,7 @@ async function load(): Promise<void> {
   errorText.value = null
   try {
     const [list, catList] = await Promise.all([
-      fetchTemplates({ hasVisual: true, sort: 'priority' }),
+      fetchTemplates({ hasVisual: true, sort: sortMode.value }),
       fetchCategories(),
     ])
     items.value = list
@@ -53,6 +61,10 @@ async function onImported(cat: string, name: string, versionToken: string): Prom
   void router.push(visualViewerPath(cat, name, versionToken))
 }
 
+watch(sortMode, () => {
+  void load()
+})
+
 onMounted(() => {
   void load()
 })
@@ -67,6 +79,7 @@ onMounted(() => {
         </template>
       </n-input>
       <n-select v-model:value="category" :options="categoryOptions" class="vis-cat" />
+      <n-select v-model:value="sortMode" :options="sortOptions" class="vis-sort" />
       <div class="vis-toolbar-actions">
         <n-button size="small" @click="showImport = true">
           <template #icon><FileUp :size="14" /></template>
@@ -102,7 +115,7 @@ onMounted(() => {
             <span class="vis-card-icon"><Play :size="16" /></span>
             <span class="vis-card-body">
               <span class="vis-card-name">{{ item.name }}</span>
-              <span class="vis-card-meta">{{ item.cat }} · {{ item.variant_count }} 个版本</span>
+              <span class="vis-card-meta">{{ item.cat }} · 难 {{ item.difficulty }} · {{ item.variant_count }} 个版本</span>
               <span v-if="item.tags.length" class="vis-card-tags">
                 <span v-for="tag in item.tags" :key="tag" class="tag">{{ tag }}</span>
               </span>
@@ -149,6 +162,10 @@ onMounted(() => {
 
 .vis-cat {
   width: 200px;
+}
+
+.vis-sort {
+  width: 132px;
 }
 
 .vis-toolbar-actions {

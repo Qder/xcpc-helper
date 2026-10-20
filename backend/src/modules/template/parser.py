@@ -35,10 +35,11 @@ def _coerce_meta(data: dict[str, Any], path: str, diags: list[Diagnostic]) -> Re
     elif tags is None:
         normalized["tags"] = []
 
-    # priority 允许字符串数字
-    priority = normalized.get("priority")
-    if isinstance(priority, str) and priority.strip().isdigit():
-        normalized["priority"] = int(priority.strip())
+    # priority / difficulty 允许字符串数字
+    for key in ("priority", "difficulty"):
+        value = normalized.get(key)
+        if isinstance(value, str) and value.strip().isdigit():
+            normalized[key] = int(value.strip())
 
     normalized["examples"] = _coerce_examples(normalized.get("examples"), path, diags)
 

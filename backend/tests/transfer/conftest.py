@@ -23,6 +23,7 @@ README_FULL = (
     "source: '洛谷 P3383'\n"
     "page: 'https://www.luogu.com.cn/problem/P3383'\n"
     "priority: 5\n"
+    "difficulty: 7\n"
     "---\n"
     "\n"
     "线性筛说明。\n"

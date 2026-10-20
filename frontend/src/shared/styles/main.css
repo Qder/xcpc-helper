@@ -890,6 +890,10 @@ div.n-base-selection-input {
   flex-shrink: 0;
 }
 
+.tpl-difficulty {
+  font-variant-numeric: tabular-nums;
+}
+
 .tpl-variants {
   max-height: 0;
   overflow: hidden;

@@ -67,6 +67,7 @@ def test_export_manifest_and_utf8(content_dir: Path) -> None:
         # README 元数据保留
         readme = zf.read("content/math/sieve/sieve/README.md").decode("utf-8")
         assert "priority: 5" in readme
+        assert "difficulty: 7" in readme
         assert "线性筛说明" in readme
 
 

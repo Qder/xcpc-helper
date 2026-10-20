@@ -85,6 +85,7 @@ def test_render_readme_roundtrip() -> None:
             ExampleLink(label="CF 26A", url="https://codeforces.com/problemset/problem/26/A")
         ],
         priority=5,
+        difficulty=7,
     )
     text = writer.render_readme(meta, "线性筛说明。\n\n第二段。")
     parsed, body = parse_readme_text(text, "test/README.md", [])
@@ -96,6 +97,7 @@ def test_render_readme_roundtrip() -> None:
         ("CF 26A", "https://codeforces.com/problemset/problem/26/A"),
     ]
     assert parsed.priority == 5
+    assert parsed.difficulty == 7
     assert body == "线性筛说明。\n\n第二段。"
 
 
@@ -106,9 +108,11 @@ def test_render_readme_omits_defaults() -> None:
     assert parsed.updated is None
     assert parsed.tags == []
     assert parsed.priority == 2
+    assert parsed.difficulty == 5
     assert parsed.examples == []
     assert body == ""
     assert "priority" not in text
+    assert "difficulty" not in text
     assert "examples" not in text
 
 

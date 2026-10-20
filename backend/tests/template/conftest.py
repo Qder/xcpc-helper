@@ -10,6 +10,7 @@ tags: ['素数', '积性函数']
 source: '洛谷 P3383'
 page: 'https://www.luogu.com.cn/problem/P3383'
 priority: 5
+difficulty: 7
 ---
 
 线性筛：每个合数只被最小质因子筛掉一次。
@@ -36,12 +37,12 @@ def content_dir(tmp_path: Path) -> Path:
     _write(root / "ds" / "dsu" / "path-compression" / "dsu.cpp", CPP_CODE)
     _write(
         root / "ds" / "dsu" / "path-compression" / "README.md",
-        "---\npriority: 4\nupdated: 2026-07-01\n---\n\n并查集路径压缩版。\n",
+        "---\npriority: 4\ndifficulty: 6\nupdated: 2026-07-01\n---\n\n并查集路径压缩版。\n",
     )
     _write(root / "ds" / "dsu" / "with-weight" / "dsu_weight.cpp", CPP_CODE)
     _write(
         root / "ds" / "dsu" / "with-weight" / "README.md",
-        "---\npriority: 3\nupdated: 2026-07-10\ntags: '连通性'\n---\n\n并查集带权版。\n",
+        "---\npriority: 3\ndifficulty: 3\nupdated: 2026-07-10\ntags: '连通性'\n---\n\n并查集带权版。\n",
     )
 
     # 形态三：仅一个副标签子目录（折叠为单版本）

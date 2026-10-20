@@ -1,3 +1,3 @@
 ---
-
+difficulty: 6
 ---

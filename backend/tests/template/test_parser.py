@@ -18,6 +18,7 @@ def test_parse_full_front_matter() -> None:
         "source: '洛谷 P3383'\n"
         "page: 'https://www.luogu.com.cn/problem/P3383'\n"
         "priority: 5\n"
+        "difficulty: 7\n"
         "---\n"
         "\n"
         "正文说明。\n"
@@ -28,6 +29,7 @@ def test_parse_full_front_matter() -> None:
     assert meta.source == "洛谷 P3383"
     assert meta.page == "https://www.luogu.com.cn/problem/P3383"
     assert meta.priority == 5
+    assert meta.difficulty == 7
     assert body == "正文说明。"
     assert diags == []
 
@@ -35,6 +37,7 @@ def test_parse_full_front_matter() -> None:
 def test_parse_defaults_and_optional_fields() -> None:
     meta, body, diags = _parse("---\n{}\n---\n")
     assert meta.priority == 2  # 默认优先级
+    assert meta.difficulty == 5  # 默认难度
     assert meta.tags == []
     assert meta.updated is None
     assert meta.examples == []
@@ -127,3 +130,8 @@ def test_bom_and_crlf_tolerated() -> None:
     meta, body, _ = _parse("\ufeff---\r\npriority: 4\r\n---\r\n\r\nbody\r\n")
     assert meta.priority == 4
     assert body == "body"
+
+
+def test_difficulty_accepts_string_number() -> None:
+    meta, _, _ = _parse("---\ndifficulty: '3'\n---\n")
+    assert meta.difficulty == 3

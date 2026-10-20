@@ -35,6 +35,18 @@ def test_list_sorted_by_priority(service: TemplateService) -> None:
     assert items[0].name == "sieve"
 
 
+def test_list_sorted_by_difficulty(service: TemplateService) -> None:
+    items = service.list_templates(sort="difficulty")
+    difficulties = [t.difficulty for t in items]
+    assert difficulties == sorted(difficulties)
+    # dsu max=6，sieve=7；同分按名称
+    dsu = next(t for t in items if t.id == "ds/dsu")
+    sieve = next(t for t in items if t.id == "math/sieve")
+    assert items.index(dsu) < items.index(sieve)
+    assert dsu.difficulty == 6
+    assert sieve.difficulty == 7
+
+
 def test_list_filter_by_category_and_keyword(service: TemplateService) -> None:
     assert [t.id for t in service.list_templates(category="ds")] == ["ds/dsu"]
     hits = service.list_templates(keyword="并查集")
@@ -85,8 +97,10 @@ def test_detail_variants_carry_meta(service: TemplateService) -> None:
     detail = service.get_detail("ds/dsu")
     first, second = detail.variants
     assert first.priority == 4
+    assert first.difficulty == 6
     assert first.updated == datetime.date(2026, 7, 1)
     assert second.priority == 3
+    assert second.difficulty == 3
     assert second.updated == datetime.date(2026, 7, 10)
     assert second.tags == ["连通性"]
     assert first.examples == []
@@ -108,6 +122,7 @@ def test_detail_empty_template(service: TemplateService) -> None:
     assert detail.lang is None
     assert detail.file is None
     assert detail.priority == 2
+    assert detail.difficulty == 5
 
 
 def test_categories(service: TemplateService) -> None:

@@ -267,6 +267,7 @@ class TransferService:
                     for item in parsed_meta.examples
                 ],
                 priority=parsed_meta.priority,
+                difficulty=parsed_meta.difficulty,
             )
         ext = version.file_name.rsplit(".", 1)[-1]
         # 外来模板的版本目录名取清洗后的模板名（analyze 保证与 plan.name 同步改名）；

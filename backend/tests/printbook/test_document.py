@@ -52,6 +52,7 @@ def test_tilde_resolves_root_version(template_service: TemplateService) -> None:
     assert block.resolved is not None
     assert block.resolved.version_name == "qpow"
     assert block.resolved.priority == 5
+    assert block.resolved.difficulty == 2
     assert block.resolved.body == "快速幂。"
 
 

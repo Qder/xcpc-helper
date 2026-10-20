@@ -51,6 +51,7 @@ const SORT_OPTIONS = [
   { label: '按更新时间', value: 'updated' },
   { label: '按名称', value: 'name' },
   { label: '按优先级', value: 'priority' },
+  { label: '按难度', value: 'difficulty' },
 ]
 
 // 搜索/分类/排序均由后端完成：本地变更 200ms 防抖后通知父级查询
@@ -178,6 +179,13 @@ function addVariant(template: TemplateSummary, variant: TemplateVariant): void {
                     </span>
                   </template>
                   优先级 {{ template.priority }}
+                </n-tooltip>
+                <span class="tpl-meta-sep">·</span>
+                <n-tooltip>
+                  <template #trigger>
+                    <span class="tpl-difficulty">难 {{ template.difficulty }}</span>
+                  </template>
+                  难度 {{ template.difficulty }}（1 最易，9 最难）
                 </n-tooltip>
               </span>
             </span>

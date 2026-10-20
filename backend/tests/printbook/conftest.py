@@ -27,7 +27,7 @@ def content_dir(tmp_path: Path) -> Path:
 
     # 顶层单版本（代码直接在模板目录下，URL 保留字 '~' 寻址）
     _write(root / "math" / "qpow" / "qpow.cpp", CPP)
-    _write(root / "math" / "qpow" / "README.md", "---\npriority: 5\n---\n\n快速幂。\n")
+    _write(root / "math" / "qpow" / "README.md", "---\npriority: 5\ndifficulty: 2\n---\n\n快速幂。\n")
 
     # 多版本（副标签目录 basic / weighted）
     _write(root / "ds" / "dsu" / "basic" / "dsu.cpp", CPP)

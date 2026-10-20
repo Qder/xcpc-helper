@@ -27,7 +27,12 @@ from core.exceptions import (
     NotFoundError,
     PayloadTooLargeError,
 )
-from modules.template.models import DEFAULT_PRIORITY, MAX_EXAMPLES, is_http_url
+from modules.template.models import (
+    DEFAULT_DIFFICULTY,
+    DEFAULT_PRIORITY,
+    MAX_EXAMPLES,
+    is_http_url,
+)
 from modules.template.scanner import (
     CODE_EXTENSIONS,
     VISUAL_FILENAME,
@@ -99,7 +104,7 @@ def render_readme(meta: VersionMetaInput, body: str) -> str:
     """按表单数据生成 README.md 全文（front matter + 正文）。
 
     字段缺省时省略对应行（与解析端"不填即默认"的语义一致）；
-    priority 等于默认值时省略，保持 README 干净。
+    priority / difficulty 等于默认值时省略，保持 README 干净。
     """
     data: dict[str, Any] = {}
     if meta.updated is not None:
@@ -117,6 +122,8 @@ def render_readme(meta: VersionMetaInput, body: str) -> str:
         ]
     if meta.priority != DEFAULT_PRIORITY:
         data["priority"] = meta.priority
+    if meta.difficulty != DEFAULT_DIFFICULTY:
+        data["difficulty"] = meta.difficulty
 
     # 空 front matter 也要保留一个空行（"---\n\n---"），否则解析端正则不匹配
     front = (
