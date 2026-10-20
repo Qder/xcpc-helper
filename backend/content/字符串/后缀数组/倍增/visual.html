@@ -1,0 +1,612 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>算法可视化</title>
+<style>
+:root {
+  --hue: 160;
+  --bg: #f6f5f2; --surface: #ffffff; --text: #1f1d1a; --faint: #7a766f; --border: #e0ddd6;
+  --hl: rgba(37, 99, 235, .14); --accent: hsl(var(--hue), 60%, 40%); --warn: #d97706; --ok: #16a34a; --bad: #dc2626; --info: #2563eb;
+  --code-bg: #1c1a17; --code-bg-head: #26231f; --code-border: #35302a; --code-text: #e6e1d6; --code-ln: #6d675c;
+  --code-comment: #7d7a68; --code-string: #d9a35f; --code-number: #c98fc0; --code-preproc: #86b8b1;
+  --code-kw: hsl(var(--hue), 72%, 68%);
+}
+:root[data-theme="dark"] {
+  --bg: #191816; --surface: #23211e; --text: #ece9e3; --faint: #9a958c; --border: #37342f;
+  --hl: rgba(96, 165, 250, .22); --accent: hsl(var(--hue), 55%, 55%); --warn: #f59e0b; --ok: #4ade80; --bad: #f87171; --info: #60a5fa;
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: 16px; background: var(--bg); color: var(--text);
+  font: 14px/1.6 system-ui, -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; margin-bottom: 12px; }
+h1 { font-size: 18px; margin: 0; }
+.chip { font-size: 12px; color: var(--faint); border: 1px solid var(--border); border-radius: 999px; padding: 0 10px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 12px; }
+#stage { min-height: 220px; overflow: auto; }
+.main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+@media (min-width: 900px) { .main.has-code { grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); } }
+#codeWrap { min-width: 0; display: flex; flex-direction: column; background: var(--code-bg);
+  border: 1px solid var(--code-border); border-radius: 8px; overflow: hidden; color: var(--code-text); }
+.code-head { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 9px 12px; background: var(--code-bg-head); border-bottom: 1px solid var(--code-border); flex: none; }
+.code-status { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.status-led { width: 8px; height: 8px; border-radius: 50%; background: hsl(var(--hue), 72%, 62%); flex: none;
+  animation: led-pulse 2.2s ease-out infinite; }
+@keyframes led-pulse {
+  0% { box-shadow: 0 0 0 0 hsl(var(--hue), 72%, 62%, .45); }
+  70% { box-shadow: 0 0 0 7px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.code-file { font: 12px/1.4 ui-monospace, Consolas, "Cascadia Mono", monospace; color: var(--code-text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.code-lang { font: 10.5px/1.4 ui-monospace, Consolas, monospace; color: var(--code-ln);
+  border: 1px solid var(--code-border); border-radius: 4px; padding: 1px 6px; }
+.code-lines { font: 11px/1.4 ui-monospace, Consolas, monospace; color: var(--code-ln); }
+.code-actions { display: flex; gap: 6px; flex: none; }
+#codeWrap.collapsed #code { display: none; }
+#codeWrap.collapsed .code-head { border-bottom: none; }
+#codeWrap .copy-btn { display: inline-flex; align-items: center; height: 26px; padding: 0 10px;
+  border: 1px solid var(--code-border); border-radius: 6px; background: transparent; color: var(--code-text);
+  font-size: 12px; min-height: 26px; }
+#codeWrap .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+#codeWrap .copy-btn.copied { border-color: var(--accent); color: var(--accent); background: hsl(var(--hue), 60%, 40%, .12); }
+#code { max-height: 440px; overflow: auto; position: relative; background: var(--code-bg); padding: 8px 0 16px;
+  font: 13px/1.7 ui-monospace, Consolas, "Cascadia Mono", monospace; color: var(--code-text); }
+.ln { display: flex; white-space: pre; border-left: 3px solid transparent; padding-right: 16px; }
+.ln b { flex: none; width: 3.2em; text-align: right; padding-right: 12px; color: var(--code-ln); font-weight: 400; user-select: none; font-size: 11px; }
+.ln.hl { background: rgb(255 255 255 / 0.06); border-left-color: var(--accent); }
+.ln.hl b { color: var(--accent); }
+.tok-kw { color: var(--code-kw); }
+.tok-str { color: var(--code-string); }
+.tok-num { color: var(--code-number); }
+.tok-cmt { color: var(--code-comment); font-style: italic; }
+.tok-pp { color: var(--code-preproc); }
+#note { min-height: 24px; font-weight: 600; }
+#legend { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--faint); font-size: 12px; margin-top: 8px; }
+#legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.card.controls { position: sticky; top: 0; z-index: 20; }
+button { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 4px 12px; min-height: 32px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+input[type=range] { accent-color: var(--accent); }
+#progress { flex: 1 1 200px; min-width: 120px; }
+textarea { width: 100%; min-height: 60px; font: 13px/1.5 ui-monospace, Consolas, monospace; color: var(--text);
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px; resize: vertical; }
+#error { color: var(--bad); min-height: 20px; font-size: 13px; }
+footer { color: var(--faint); font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title"></h1>
+  <span class="chip" id="complexity"></span>
+  <span class="chip" id="stepInfo">0 / 0</span>
+</header>
+
+<div class="card controls" role="group" aria-label="播放控制">
+  <button id="btnReset" title="重置 (Home)">重置</button>
+  <button id="btnPrev" title="上一步 (←)">上一步</button>
+  <button id="btnPlay" class="primary" title="播放 / 暂停 (空格)">播放</button>
+  <button id="btnNext" title="下一步 (→)">下一步</button>
+  <input id="progress" type="range" min="0" max="0" value="0" aria-label="进度">
+  <label>速度 <input id="speed" type="range" min="1" max="10" value="5" aria-label="速度"></label>
+</div>
+
+<div class="card main has-code" id="main">
+  <div class="viz">
+    <div id="note" aria-live="polite"></div>
+    <div id="stage"></div>
+    <div id="legend"></div>
+  </div>
+  <aside id="codeWrap">
+    <div class="code-head">
+      <div class="code-status">
+        <span class="status-led" aria-hidden="true"></span>
+        <span class="code-file" id="codeFile">code.cpp</span>
+        <span class="code-lang" id="codeLang">cpp</span>
+        <span class="code-lines" id="codeLines"></span>
+      </div>
+      <div class="code-actions">
+        <button type="button" class="copy-btn" id="btnCopyCode">复制</button>
+        <button type="button" class="copy-btn" id="btnToggleCode">收起</button>
+      </div>
+    </div>
+    <div id="code" role="region" aria-label="模板代码"></div>
+  </aside>
+</div>
+
+<div class="card">
+  <label for="input"><b>输入数据</b></label>
+  <textarea id="input" spellcheck="false"></textarea>
+  <div class="controls" style="margin-top:8px">
+    <button id="btnApply">应用输入</button>
+    <button id="btnRandom">随机生成</button>
+    <span id="hint" class="chip"></span>
+  </div>
+  <div id="error" role="alert"></div>
+</div>
+
+<footer>教学演示，以模板代码为准。快捷键：空格 播放/暂停，← → 单步，Home 重置。</footer>
+
+<script type="text/plain" id="code-src">
+void build_sa(const char *s, int n)
+{
+	int m = 256; //字符集大小，按 unsigned char 处理
+	for(int i = 0; i <= m; i ++) cnt[i] = 0;
+	for(int i = 1; i <= n; i ++) cnt[rk[i] = (unsigned char)s[i]] ++;
+	for(int i = 1; i <= m; i ++) cnt[i] += cnt[i - 1];
+	for(int i = n; i >= 1; i --) sa[cnt[rk[i]] --] = i;
+
+	for(int w = 1; w < n; w <<= 1)
+	{
+		// 按第二关键字排序：i + w 越界（后半段为空）的排最前，其余按上一轮 sa 的顺序平移
+		int p = 0;
+		for(int i = n - w + 1; i <= n; i ++) id2[++ p] = i;
+		for(int i = 1; i <= n; i ++)
+			if(sa[i] > w) id2[++ p] = sa[i] - w;
+
+		// 第一关键字计数排序（从后往前扫，保证第二关键字的相对顺序不被打乱）
+		for(int i = 0; i <= m; i ++) cnt[i] = 0;
+		for(int i = 1; i <= n; i ++) cnt[rk[i]] ++;
+		for(int i = 1; i <= m; i ++) cnt[i] += cnt[i - 1];
+		for(int i = n; i >= 1; i --) sa[cnt[rk[id2[i]]] --] = id2[i];
+
+		// 重算排名：二元组 (rk[i], rk[i + w]) 不同就排名 +1
+		for(int i = 1; i <= n; i ++) ork[i] = rk[i];
+		p = 0;
+		for(int i = 1; i <= n; i ++)
+		{
+			int a = sa[i], b = sa[i - 1];
+			bool diff = (i == 1) || ork[a] != ork[b]
+				|| (a + w <= n ? ork[a + w] : 0) != (b + w <= n ? ork[b + w] : 0);
+			if(diff) p ++;
+			rk[a] = p;
+		}
+		if(p == n) break; //每个后缀排名都不同，已经排好
+		m = p;
+	}
+}
+</script>
+
+<script>
+
+  //只调用,不要改写
+  function layoutCircle(n, cx, cy, r) {
+  return Array.from({ length: n }, (_, i) => {
+    const a = -Math.PI / 2 + (2 * Math.PI * i) / n;
+    return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
+  });
+}
+
+function layoutBinary(root, left, right, dx = 44, dy = 60) {
+  const pos = {};
+  let k = 0;
+  (function dfs(u, d) {
+    if (u == null) return;
+    dfs(left[u], d + 1);
+    pos[u] = { x: k++ * dx, y: d * dy };
+    dfs(right[u], d + 1);
+  })(root, 0);
+  return pos;
+}
+
+function layoutTree(root, children, dx = 48, dy = 64) {
+  const pos = {};
+  let leaf = 0;
+  (function dfs(u, d) {
+    const cs = children[u] || [];
+    if (cs.length === 0) { pos[u] = { x: leaf++ * dx, y: d * dy }; return; }
+    cs.forEach((c) => dfs(c, d + 1));
+    pos[u] = { x: (pos[cs[0]].x + pos[cs[cs.length - 1]].x) / 2, y: d * dy };
+  })(root, 0);
+  return pos;
+}
+
+function edgeSvg(a, b, o = {}) {
+  const { r = 18, directed = false, color = 'var(--faint)', width = 2, dash = '' } = o;
+  const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len;
+  const x1 = a.x + ux * r, y1 = a.y + uy * r, x2 = b.x - ux * r, y2 = b.y - uy * r;
+  let s = '<line x1="' + x1 + '" y1="' + y1 + '" x2="' + x2 + '" y2="' + y2 + '" stroke="' + color +
+    '" stroke-width="' + width + '"' + (dash ? ' stroke-dasharray="' + dash + '"' : '') + '/>';
+  if (directed) {
+    const hx = x2 - ux * 9, hy = y2 - uy * 9;
+    s += '<polygon points="' + x2 + ',' + y2 + ' ' + (hx - uy * 5) + ',' + (hy + ux * 5) + ' ' +
+      (hx + uy * 5) + ',' + (hy - ux * 5) + '" fill="' + color + '"/>';
+  }
+  return s;
+}
+
+function svgBox(points, pad = 30) {
+  const xs = points.map((p) => p.x), ys = points.map((p) => p.y);
+  const x0 = Math.min(...xs) - pad, y0 = Math.min(...ys) - pad;
+  return x0 + ' ' + y0 + ' ' + (Math.max(...xs) + pad - x0) + ' ' + (Math.max(...ys) + pad - y0);
+}
+
+function textSvg(x, y, text, o = {}) {
+  const { size = 12, weight = 400, fill = 'var(--text)', anchor = 'middle' } = o;
+  return '<text x="' + x + '" y="' + y + '" font-size="' + size + '" font-weight="' + weight + '" text-anchor="' + anchor +
+    '" fill="' + fill + '" stroke="var(--surface)" stroke-width="3" paint-order="stroke" stroke-linejoin="round">' + text + '</text>';
+}
+/* === ALGO START：只允许修改这一段（示例：二分查找） === */
+const META = {
+  title: '后缀数组（倍增）',
+  complexity: '时间 O(n log n)　空间 O(n)',
+  inputHint: '一行字符串，长度 1..12，仅大小写字母或数字',
+  file: '后缀数组.cpp',
+  lang: 'cpp',
+  legend: [
+    { color: 'var(--accent)', text: '本轮参与排序的前 2w 个字符' },
+    { color: 'var(--warn)', text: '排名发生变化的 suffix' },
+    { color: 'var(--ok)', text: '当前 sa 顺序' },
+    { color: 'var(--border)', text: '其他' },
+  ],
+};
+const MAX_N = 12;
+const DEFAULT_INPUT = 'ababa';
+
+// code-src 中的关键行（从 1 开始）
+const L = {
+  initSort: [4, 5, 6, 7], round: 9, buildId2: [12, 13, 14, 15],
+  countSort: [18, 19, 20, 21], copyOrk: 24, compare: [26, 27, 28, 29, 30],
+  writeRk: [31, 32], done: 34, nextM: 35,
+};
+
+function parseInput(text) {
+  const raw = text.trim();
+  if (!raw) throw new Error('请输入一个非空字符串');
+  if (/\s/.test(raw)) throw new Error('只能输入一行、不含空白的字符串');
+  if (raw.length > MAX_N) throw new Error('字符串长度不能超过 ' + MAX_N);
+  if (!/^[A-Za-z0-9]+$/.test(raw)) throw new Error('只支持大小写字母与数字');
+  return { s: ['', ...raw.split('')] };
+}
+
+function randomInput() {
+  const n = 5 + Math.floor(Math.random() * 6);
+  let out = '';
+  for (let i = 0; i < n; i++) out += 'abc'[Math.floor(Math.random() * 3)];
+  return out;
+}
+
+/* 每一帧都是自包含快照：sa / rk / ork / id2 全部拷贝 */
+function buildFrames(data) {
+  const s = data.s, n = s.length - 1;
+  const frames = [];
+  const sa = new Array(n + 1).fill(0);
+  const rk = new Array(n + 1).fill(0);
+  const ork = new Array(n + 1).fill(0);
+  const id2 = new Array(n + 1).fill(0);
+  const changed = new Array(n + 1).fill(false);
+  let m = 256;
+  let w = 0;
+  let classes = 0;
+
+  const snap = (note, phase, lines) => frames.push({
+    note, phase, lines, w, classes,
+    sa: sa.slice(), rk: rk.slice(), ork: ork.slice(),
+    id2: id2.slice(), changed: changed.slice(),
+  });
+
+  // 与模板一致：按首字符计数排序，rk 先记 ASCII
+  const cnt = new Array(m + 1).fill(0);
+  for (let i = 0; i <= m; i++) cnt[i] = 0;
+  for (let i = 1; i <= n; i++) cnt[rk[i] = s[i].charCodeAt(0)]++;
+  for (let i = 1; i <= m; i++) cnt[i] += cnt[i - 1];
+  for (let i = n; i >= 1; i--) sa[cnt[rk[i]]--] = i;
+  snap('初始：rk[i] 取字符 ASCII，按首字符计数排序得到 sa', 'init', L.initSort);
+
+  for (w = 1; w < n; w <<= 1) {
+    snap('第 w = ' + w + ' 轮：把长度 w 的排名两两合并，比较二元组 (rk[i], rk[i+w])', 'round', [L.round]);
+    let p = 0;
+    for (let i = n - w + 1; i <= n; i++) id2[++p] = i;
+    for (let i = 1; i <= n; i++) if (sa[i] > w) id2[++p] = sa[i] - w;
+    snap('按第二关键字排好 id2：后半段为空的排最前，其余按上一轮 sa 平移', 'id2', L.buildId2);
+
+    for (let i = 0; i <= m; i++) cnt[i] = 0;
+    for (let i = 1; i <= n; i++) cnt[rk[i]]++;
+    for (let i = 1; i <= m; i++) cnt[i] += cnt[i - 1];
+    for (let i = n; i >= 1; i--) sa[cnt[rk[id2[i]]]--] = id2[i];
+    snap('按第一关键字计数排序（从后往前扫保持稳定），得到新的 sa', 'sort', L.countSort);
+
+    for (let i = 1; i <= n; i++) ork[i] = rk[i];
+    p = 0;
+    for (let i = 1; i <= n; i++) {
+      const a = sa[i], b = sa[i - 1];
+      const diff = i === 1 || ork[a] !== ork[b] ||
+        (a + w <= n ? ork[a + w] : 0) !== (b + w <= n ? ork[b + w] : 0);
+      if (diff) p++;
+      rk[a] = p;
+      changed[a] = p !== ork[a];
+    }
+    classes = p;
+    snap('重算 rk：二元组不同就 p++，本轮共 ' + p + ' 个不同排名', 'rank', L.compare.concat(L.writeRk));
+    if (p === n) {
+      snap('p == n：所有后缀排名互不相同，排序完成', 'done', [L.done]);
+      break;
+    }
+    m = p;
+    snap('把字符集大小 m 收紧为 ' + p + '，进入下一轮', 'next', [L.nextM]);
+  }
+  return frames;
+}
+
+/* 只根据 frame 与 data 绘制，不修改它们 */
+function render(frame, stage, data) {
+  const s = data.s, n = s.length - 1;
+  stage.innerHTML = '';
+
+  const strWrap = document.createElement('div');
+  strWrap.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;align-items:flex-end';
+  for (let i = 1; i <= n; i++) {
+    const cell = document.createElement('div');
+    cell.style.cssText = 'width:42px;text-align:center;border:1px solid var(--border);border-radius:8px;padding:5px 0;background:var(--surface)';
+    cell.innerHTML = '<div style="font-weight:700">' + s[i] + '</div><div style="font-size:11px;color:var(--faint)">' + i + '</div>';
+    strWrap.appendChild(cell);
+  }
+  stage.appendChild(strWrap);
+
+  const rkTitle = document.createElement('div');
+  rkTitle.style.cssText = 'margin-top:12px;font-size:12px;color:var(--faint)';
+  rkTitle.textContent = 'rk[1..' + n + ']（本轮排名；Δ 表示与上一轮不同）';
+  stage.appendChild(rkTitle);
+
+  const rkRow = document.createElement('div');
+  rkRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;margin-top:4px';
+  for (let i = 1; i <= n; i++) {
+    const cell = document.createElement('div');
+    const ch = frame.changed[i];
+    cell.style.cssText = 'min-width:52px;text-align:center;border:' + (ch ? '2px solid var(--warn)' : '1px solid var(--border)') +
+      ';border-radius:7px;padding:4px 6px;font-size:12px;background:var(--surface);font-weight:700';
+    cell.innerHTML = frame.rk[i] + (ch ? '<span style="color:var(--warn)"> Δ</span>' : '');
+    rkRow.appendChild(cell);
+  }
+  stage.appendChild(rkRow);
+
+  const saTitle = document.createElement('div');
+  saTitle.style.cssText = 'margin-top:12px;font-size:12px;color:var(--faint)';
+  saTitle.textContent = '当前 sa（按排名列出后缀，前 ' + Math.max(1, 2 * frame.w) + ' 个字符参与本轮比较）';
+  stage.appendChild(saTitle);
+
+  const table = document.createElement('div');
+  table.style.cssText = 'margin-top:4px;border:1px solid var(--border);border-radius:8px;overflow:hidden';
+  for (let i = 1; i <= n; i++) {
+    const start = frame.sa[i];
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:10px;align-items:baseline;padding:3px 10px;border-bottom:1px solid var(--border);font-size:13px' +
+      (i === n ? ';border-bottom:none' : '');
+    const suffix = [];
+    for (let k = start; k <= n; k++) {
+      const hit = k - start < Math.max(1, 2 * frame.w);
+      suffix.push(hit ? '<span style="background:var(--hl);border-bottom:2px solid var(--accent)">' + s[k] + '</span>' : s[k]);
+    }
+    row.innerHTML = '<span style="min-width:2.2em;color:var(--faint)">' + i + '</span>' +
+      '<span style="min-width:3.2em;font-weight:700;color:var(--ok)">' + start + '</span>' +
+      '<span style="font-family:ui-monospace,Consolas,monospace">' + suffix.join('') + '</span>';
+    table.appendChild(row);
+  }
+  stage.appendChild(table);
+
+  if (frame.id2.some((x) => x > 0)) {
+    const idTitle = document.createElement('div');
+    idTitle.style.cssText = 'margin-top:10px;font-size:12px;color:var(--faint)';
+    idTitle.textContent = 'id2（按第二关键字排好的后缀编号）';
+    stage.appendChild(idTitle);
+    const idRow = document.createElement('div');
+    idRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;margin-top:4px';
+    for (let i = 1; i <= n; i++) {
+      const chip = document.createElement('span');
+      chip.style.cssText = 'border:1px solid var(--border);border-radius:6px;padding:2px 8px;font-size:12px;background:var(--surface)';
+      chip.textContent = frame.id2[i];
+      idRow.appendChild(chip);
+    }
+    stage.appendChild(idRow);
+  }
+
+  const info = document.createElement('div');
+  info.style.cssText = 'margin-top:10px;font-size:12px;color:var(--faint)';
+  info.textContent = 'w = ' + frame.w + '　不同排名数 p = ' + (frame.classes || '-');
+  stage.appendChild(info);
+}
+/* === ALGO END === */
+
+/* ---------- 播放器（固定部分，不要修改） ---------- */
+const MAX_FRAMES = 5000;
+const $ = (id) => document.getElementById(id);
+let data = null, frames = [], idx = 0, timer = null;
+
+const codeSrcText = (($('code-src') || {}).textContent || '').replace(/^\r?\n/, '').replace(/\s+$/, '');
+const codeLines = codeSrcText.split(/\r?\n/);
+const hasCode = codeLines.length > 0 && codeLines.join('').trim() !== '';
+const KW = /^(?:alignas|alignof|and|and_eq|asm|auto|bitand|bitor|bool|break|case|catch|char|class|compl|concept|const|consteval|constexpr|constinit|continue|decltype|default|delete|do|double|else|enum|explicit|export|extern|false|float|for|friend|goto|if|inline|int|long|mutable|namespace|new|noexcept|not|not_eq|nullptr|operator|or|or_eq|private|protected|public|register|requires|return|short|signed|sizeof|static|static_assert|struct|switch|template|this|throw|true|try|typedef|typeid|typename|union|unsigned|using|virtual|void|volatile|wchar_t|while|xor|xor_eq|ll|ull|i64|u64|vector|string|map|set|queue|stack|pair|cin|cout|endl)$/;
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function highlightCpp(line) {
+  let i = 0, out = '', n = line.length;
+  const push = (cls, text) => {
+    const t = escapeHtml(text);
+    out += cls ? '<span class="' + cls + '">' + t + '</span>' : t;
+  };
+  while (i < n) {
+    if (line[i] === '/' && line[i + 1] === '/') { push('tok-cmt', line.slice(i)); break; }
+    if (line[i] === '/' && line[i + 1] === '*') {
+      const end = line.indexOf('*/', i + 2);
+      const j = end < 0 ? n : end + 2;
+      push('tok-cmt', line.slice(i, j));
+      i = j; continue;
+    }
+    if (line[i] === '"' || line[i] === "'") {
+      const q = line[i];
+      let j = i + 1;
+      while (j < n) {
+        if (line[j] === '\\') { j += 2; continue; }
+        if (line[j] === q) { j++; break; }
+        j++;
+      }
+      push('tok-str', line.slice(i, j));
+      i = j; continue;
+    }
+    if (line[i] === '#' && !line.slice(0, i).trim()) { push('tok-pp', line.slice(i)); break; }
+    if (/[A-Za-z_]/.test(line[i])) {
+      let j = i + 1;
+      while (j < n && /[A-Za-z0-9_]/.test(line[j])) j++;
+      const w = line.slice(i, j);
+      push(KW.test(w) ? 'tok-kw' : '', w);
+      i = j; continue;
+    }
+    if (/[0-9]/.test(line[i])) {
+      let j = i + 1;
+      while (j < n && /[0-9a-fA-FxXlLuU.]/.test(line[j])) j++;
+      push('tok-num', line.slice(i, j));
+      i = j; continue;
+    }
+    out += escapeHtml(line[i]);
+    i++;
+  }
+  return out || ' ';
+}
+const lineEls = [];
+if (hasCode) {
+  const box = $('code');
+  codeLines.forEach((text, i) => {
+    const row = document.createElement('div');
+    row.className = 'ln';
+    const num = document.createElement('b');
+    num.textContent = String(i + 1);
+    const span = document.createElement('span');
+    span.innerHTML = highlightCpp(text === '' ? ' ' : text);
+    row.appendChild(num); row.appendChild(span);
+    box.appendChild(row); lineEls.push(row);
+  });
+  $('codeFile').textContent = (META && META.file) || 'code.cpp';
+  $('codeLang').textContent = (META && META.lang) || 'cpp';
+  $('codeLines').textContent = codeLines.length + ' 行';
+} else {
+  $('codeWrap').style.display = 'none';
+  $('main').classList.remove('has-code');
+}
+let codeOpen = hasCode;
+if (hasCode) {
+  $('btnToggleCode').onclick = () => {
+    codeOpen = !codeOpen;
+    $('codeWrap').classList.toggle('collapsed', !codeOpen);
+    $('main').classList.toggle('has-code', codeOpen);
+    $('btnToggleCode').textContent = codeOpen ? '收起' : '展开';
+  };
+  let copiedTimer = 0;
+  $('btnCopyCode').onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(codeSrcText);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = codeSrcText;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    $('btnCopyCode').textContent = '已复制';
+    $('btnCopyCode').classList.add('copied');
+    clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(() => {
+      $('btnCopyCode').textContent = '复制';
+      $('btnCopyCode').classList.remove('copied');
+    }, 1600);
+  };
+}
+function highlight(lines) {
+  if (!hasCode) return;
+  lineEls.forEach((el) => el.classList.remove('hl'));
+  const hit = (lines || []).filter((n) => n >= 1 && n <= lineEls.length);
+  hit.forEach((n) => lineEls[n - 1].classList.add('hl'));
+  if (!hit.length) return;
+  const box = $('code'), first = lineEls[hit[0] - 1], last = lineEls[hit[hit.length - 1] - 1];
+  if (first.offsetTop < box.scrollTop) box.scrollTop = Math.max(0, first.offsetTop - 8);
+  else if (last.offsetTop + last.offsetHeight > box.scrollTop + box.clientHeight) {
+    box.scrollTop = last.offsetTop + last.offsetHeight - box.clientHeight + 8;
+  }
+}
+
+function setError(msg) { $('error').textContent = msg || ''; }
+function stop() { if (timer) { clearInterval(timer); timer = null; } $('btnPlay').textContent = '播放'; }
+function show(i) {
+  if (!frames.length) return;
+  idx = Math.max(0, Math.min(frames.length - 1, i));
+  const f = frames[idx];
+  $('note').textContent = f.note || '';
+  render(f, $('stage'), data);
+  highlight(f.lines);
+  $('stepInfo').textContent = (idx + 1) + ' / ' + frames.length;
+  $('progress').value = String(idx);
+}
+function play() {
+  if (!frames.length) return;
+  if (idx >= frames.length - 1) show(0);
+  stop();
+  $('btnPlay').textContent = '暂停';
+  const delay = 1100 - Number($('speed').value) * 100;
+  timer = setInterval(() => {
+    if (idx >= frames.length - 1) { stop(); return; }
+    show(idx + 1);
+  }, delay);
+}
+function load(text) {
+  stop(); setError('');
+  try {
+    const parsed = parseInput(text);
+    const built = buildFrames(parsed);
+    if (!built.length) throw new Error('没有可演示的步骤');
+    if (built.length > MAX_FRAMES) throw new Error('步骤过多（' + built.length + '），请缩小输入规模');
+    data = parsed; frames = built;
+    $('progress').max = String(frames.length - 1);
+    show(0);
+  } catch (e) {
+    setError(e && e.message ? e.message : String(e));
+  }
+}
+
+$('title').textContent = META.title;
+document.title = META.title + ' · 算法可视化';
+$('complexity').textContent = META.complexity;
+$('hint').textContent = META.inputHint;
+$('legend').innerHTML = META.legend.map((x) => '<span><i style="background:' + x.color + '"></i>' + x.text + '</span>').join('');
+$('input').value = DEFAULT_INPUT;
+
+$('btnPlay').onclick = () => (timer ? stop() : play());
+$('btnNext').onclick = () => { stop(); show(idx + 1); };
+$('btnPrev').onclick = () => { stop(); show(idx - 1); };
+$('btnReset').onclick = () => { stop(); show(0); };
+$('progress').oninput = (e) => { stop(); show(Number(e.target.value)); };
+$('speed').oninput = () => { if (timer) play(); };
+$('btnApply').onclick = () => load($('input').value);
+$('btnRandom').onclick = () => { $('input').value = randomInput(); load($('input').value); };
+
+document.addEventListener('keydown', (e) => {
+  if (e.target && /^(TEXTAREA|INPUT)$/.test(e.target.tagName) && e.target.type !== 'range') return;
+  if (e.code === 'Space') { e.preventDefault(); timer ? stop() : play(); }
+  else if (e.code === 'ArrowRight') { stop(); show(idx + 1); }
+  else if (e.code === 'ArrowLeft') { stop(); show(idx - 1); }
+  else if (e.code === 'Home') { stop(); show(0); }
+});
+
+window.addEventListener('message', (e) => {
+  const m = e.data;
+  if (!m || m.type !== 'xcpc-theme') return;
+  document.documentElement.dataset.theme = m.dark ? 'dark' : 'light';
+  if (typeof m.hue === 'number') {
+    document.documentElement.style.setProperty('--hue', String(m.hue));
+    document.documentElement.style.setProperty('--accent', 'hsl(' + m.hue + ', 55%, ' + (m.dark ? 55 : 40) + '%)');
+  }
+});
+if (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) {
+  document.documentElement.dataset.theme = 'dark';
+}
+
+load(DEFAULT_INPUT);
+</script>
+</body>
+</html>
