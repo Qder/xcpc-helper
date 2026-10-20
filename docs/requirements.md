@@ -27,7 +27,7 @@
 **算法可视化**（已实现，设计见 [design/template/visualizer.md](design/template/visualizer.md)）
 
 - 版本目录可放自包含的 `visual.html`（与代码、README 并排）；模板整理下提供画廊与沙箱演示页；
-- 画廊只列出带演示的模板，支持分类筛选与关键词搜索；演示页 iframe 沙箱播放，可对照该版本代码与说明；
+- 画廊只列出带演示的模板，支持分类筛选与关键词搜索；也可在网页粘贴 HTML 导入到指定版本；演示页 iframe 沙箱播放，可对照该版本代码与说明；
 - 模板详情页当前版本有演示时提供「可视化」入口；主题变化时向 iframe 同步明暗与色相。
 
 **导入 / 导出**（已实现，设计见 [design/template/transfer.md](design/template/transfer.md)）
