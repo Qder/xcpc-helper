@@ -21,6 +21,7 @@ from modules.template.schemas import (
     TemplateSummary,
     TemplateVersion,
     VersionUpsert,
+    VisualUpsert,
 )
 
 logger = logging.getLogger("xcpc.service.template")
@@ -151,6 +152,21 @@ class TemplateService:
             version_token,
             self._settings.visual_max_bytes,
         )
+
+    def write_visual(
+        self, category: str, name: str, version_token: str, payload: VisualUpsert
+    ) -> None:
+        """写入某版本 visual.html 并重建索引。"""
+        with self._lock:
+            writer.write_visual_html(
+                self._settings.content_dir,
+                category,
+                name,
+                version_token,
+                payload.html,
+                self._settings.visual_max_bytes,
+            )
+            self.rebuild()
 
     def create_template(self, payload: TemplateCreate) -> TemplateDetail:
         """新建空主标签目录并重建索引，返回新建模板的详情。"""

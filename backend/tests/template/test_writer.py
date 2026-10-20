@@ -7,11 +7,16 @@ import pytest
 from fastapi.testclient import TestClient
 
 from core.config import Settings
-from core.exceptions import BadRequestError, ConflictError, NotFoundError
+from core.exceptions import (
+    BadRequestError,
+    ConflictError,
+    NotFoundError,
+    PayloadTooLargeError,
+)
 from main import create_app
 from modules.template import writer
 from modules.template.parser import parse_readme_text
-from modules.template.scanner import scan_content
+from modules.template.scanner import find_visual_file, scan_content
 from modules.template.schemas import VersionMetaInput, VersionUpsert
 from services.template.service import TemplateService, get_template_service
 
@@ -239,6 +244,38 @@ def test_delete_version_dir(content_dir: Path) -> None:
     scan = scan_content(content_dir)
     node = next(t for t in scan.templates if t.id == "math/sieve")
     assert node.versions == []
+
+
+def test_write_visual_html_top_level_overwrite_and_reject(content_dir: Path) -> None:
+    html = "<!doctype html><html><body>ok</body></html>"
+    writer.write_visual_html(content_dir, "math", "sieve", "~", html, 2 * 1024 * 1024)
+    path = content_dir / "math" / "sieve" / "visual.html"
+    assert path.read_text(encoding="utf-8") == html
+
+    writer.write_visual_html(content_dir, "字符串", "哈希", "~", html, 2 * 1024 * 1024)
+    assert (content_dir / "字符串" / "哈希" / "visual.html").read_text(encoding="utf-8") == html
+
+    (content_dir / "math" / "sieve" / "visual.html").unlink()
+    (content_dir / "math" / "sieve" / "VISUAL.HTML").write_text("old", encoding="utf-8")
+    writer.write_visual_html(content_dir, "math", "sieve", "~", html, 2 * 1024 * 1024)
+    found = find_visual_file(content_dir / "math" / "sieve")
+    assert found is not None
+    assert found.read_text(encoding="utf-8") == html
+    html_files = [
+        p for p in (content_dir / "math" / "sieve").iterdir() if p.name.lower() == "visual.html"
+    ]
+    assert len(html_files) == 1
+
+    with pytest.raises(BadRequestError):
+        writer.write_visual_html(content_dir, "math", "sieve", "~", "   ", 1000)
+    with pytest.raises(BadRequestError):
+        writer.write_visual_html(content_dir, "math", "sieve", "~", "int main(){}", 1000)
+    with pytest.raises(NotFoundError):
+        writer.write_visual_html(content_dir, "math", "sieve", "missing", html, 1000)
+    with pytest.raises(PayloadTooLargeError):
+        writer.write_visual_html(content_dir, "math", "sieve", "~", html, 8)
+    with pytest.raises(BadRequestError):
+        writer.write_visual_html(content_dir, "..", "sieve", "~", html, 1000)
 
 
 # ===== 路由测试 =====

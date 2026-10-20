@@ -98,6 +98,12 @@ class VersionMetaInput(BaseModel):
     priority: int = 2
 
 
+class VisualUpsert(BaseModel):
+    """写入某版本 visual.html 的请求体。"""
+
+    html: str
+
+
 class VersionUpsert(BaseModel):
     """新建/更新版本的请求体。
 

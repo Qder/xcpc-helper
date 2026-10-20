@@ -21,6 +21,7 @@ from modules.template.schemas import (
     TemplateRename,
     TemplateSummary,
     VersionUpsert,
+    VisualUpsert,
 )
 from services.template.service import TemplateService, get_template_service
 
@@ -69,6 +70,17 @@ async def get_visual(
             "Content-Security-Policy": VISUAL_CSP,
         },
     )
+
+
+@router.put(
+    "/templates/{category}/{name}/versions/{version}/visual",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def put_visual(
+    category: str, name: str, version: str, payload: VisualUpsert, service: ServiceDep
+) -> None:
+    """PUT .../versions/{version}/visual：写入 visual.html（"~" 表示顶层单版本）。"""
+    await asyncio.to_thread(service.write_visual, category, name, version, payload)
 
 
 @router.get("/templates/{template_id:path}", response_model=TemplateDetail)

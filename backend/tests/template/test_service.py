@@ -7,7 +7,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from core.config import Settings
+from core.exceptions import BadRequestError
 from main import create_app
+from modules.template.schemas import VisualUpsert
 from services.template.service import TemplateService, get_template_service
 
 
@@ -226,8 +228,6 @@ def test_api_visual_headers_tilde_and_chinese(tmp_path: Path, content_dir: Path)
 
 
 def test_api_visual_404_413_and_bad_name(tmp_path: Path, content_dir: Path) -> None:
-    from core.exceptions import BadRequestError
-
     client = _visual_client(tmp_path, content_dir)
     resp = client.get("/api/templates/math/sieve/versions/~/visual")
     assert resp.status_code == 404
@@ -247,3 +247,50 @@ def test_api_visual_404_413_and_bad_name(tmp_path: Path, content_dir: Path) -> N
         svc.read_visual("math", "sieve", "..")
     resp = client.get("/api/templates/CON/sieve/versions/~/visual")
     assert resp.status_code == 400
+
+
+def test_api_put_visual_then_get(tmp_path: Path, content_dir: Path) -> None:
+    client = _visual_client(tmp_path, content_dir)
+    html = "<!doctype html><html lang='zh'><body>导入</body></html>"
+    resp = client.put(
+        "/api/templates/math/sieve/versions/~/visual",
+        json={"html": html},
+    )
+    assert resp.status_code == 204
+    got = client.get("/api/templates/math/sieve/versions/~/visual")
+    assert got.status_code == 200
+    assert got.content.decode("utf-8") == html
+    listed = client.get("/api/templates", params={"has_visual": True})
+    assert any(t["id"] == "math/sieve" for t in listed.json())
+
+    resp = client.put(
+        "/api/templates/ds/dsu/versions/path-compression/visual",
+        json={"html": html},
+    )
+    assert resp.status_code == 204
+    resp = client.put(
+        "/api/templates/字符串/哈希/versions/~/visual",
+        json={"html": html},
+    )
+    assert resp.status_code == 204
+
+    resp = client.put("/api/templates/math/sieve/versions/~/visual", json={"html": "   "})
+    assert resp.status_code == 400
+    resp = client.put(
+        "/api/templates/math/sieve/versions/~/visual", json={"html": "not html"}
+    )
+    assert resp.status_code == 400
+    resp = client.put(
+        "/api/templates/ds/dsu/versions/missing/visual", json={"html": html}
+    )
+    assert resp.status_code == 404
+    huge = "<html>" + ("x" * (2 * 1024 * 1024)) + "</html>"
+    resp = client.put("/api/templates/math/sieve/versions/~/visual", json={"html": huge})
+    assert resp.status_code == 413
+
+    settings = Settings(content_dir=content_dir, data_dir=tmp_path / "data-put")
+    svc = TemplateService(settings)
+    with pytest.raises(BadRequestError):
+        svc.write_visual("..", "sieve", "~", VisualUpsert(html=html))
+    with pytest.raises(BadRequestError):
+        svc.write_visual("math", "sieve", "..", VisualUpsert(html=html))

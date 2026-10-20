@@ -26,7 +26,7 @@ from core.exceptions import (
     PayloadTooLargeError,
 )
 from modules.template.models import DEFAULT_PRIORITY
-from modules.template.scanner import CODE_EXTENSIONS, find_visual_file
+from modules.template.scanner import CODE_EXTENSIONS, VISUAL_FILENAME, find_visual_file
 from modules.template.schemas import ROOT_VERSION_TOKEN, VersionMetaInput, VersionUpsert
 
 # 名称校验规则已提升至 common.validation（打印册功能共用）
@@ -226,6 +226,35 @@ def read_visual_bytes(
             f"可视化文件过大（{size} 字节，上限 {max_bytes} 字节）"
         )
     return visual.read_bytes()
+
+
+def write_visual_html(
+    content_dir: Path,
+    category: str,
+    name: str,
+    version_token: str,
+    html: str,
+    max_bytes: int,
+) -> None:
+    """把 HTML 原子写入版本目录下的 visual.html。"""
+    version_dir = resolve_version_dir(content_dir, category, name, version_token)
+    if not version_dir.is_dir():
+        raise NotFoundError(f"版本不存在: {category}/{name}/{version_token}")
+    if not html.strip():
+        raise BadRequestError("可视化内容不能为空")
+    lowered = html.lower()
+    if "<html" not in lowered and "<!doctype" not in lowered:
+        raise BadRequestError("内容看起来不是 HTML（需包含 <html 或 <!doctype）")
+    size = len(html.encode("utf-8"))
+    if size > max_bytes:
+        raise PayloadTooLargeError(
+            f"可视化文件过大（{size} 字节，上限 {max_bytes} 字节）"
+        )
+    existing = find_visual_file(version_dir)
+    target = version_dir / VISUAL_FILENAME
+    if existing is not None and existing.resolve() != target.resolve():
+        existing.unlink()
+    _atomic_write(target, html)
 
 
 def delete_template_dir(content_dir: Path, category: str, name: str) -> None:
