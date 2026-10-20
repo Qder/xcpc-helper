@@ -47,9 +47,7 @@ const lang = computed<LangId>(() => props.variant?.lang ?? props.detail.lang ?? 
 const shownTags = computed(() => (props.variant ? props.variant.tags : props.detail.tags))
 const shownSrc = computed(() => (props.variant ? props.variant.src : props.detail.src))
 const shownPage = computed(() => (props.variant ? props.variant.page : props.detail.page))
-const shownExamples = computed(() =>
-  props.variant ? props.variant.examples : [],
-)
+const shownExamples = computed(() => props.variant?.examples ?? [])
 const shownUpdated = computed(() =>
   props.variant ? props.variant.updated : props.detail.updated,
 )
