@@ -52,8 +52,8 @@ blocks:
   heading_level: 3
 - id: pb-1792486387901-2
   type: template
-  template: 数学/中国剩余定理（CRT）
-  version: CRT
+  template: 数论/CRT
+  version: 互质模数版
   heading_level: 3
 - id: pb-1792486396315-3
   type: template
