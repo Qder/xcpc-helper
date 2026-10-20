@@ -26,7 +26,7 @@
 2. 以【骨架】为基础，只允许修改 /* === ALGO START === */ 与 /* === ALGO END === */ 之间的内容，以及 <style> 中新增的、仅供 render 使用的样式；播放器（ALGO END 之后的全部脚本）、控制条、输入区、快捷键、主题消息监听一律不得改动。
 3. 骨架在 ALGO START 之前若已提供 layoutCircle / layoutBinary / layoutTree / edgeSvg / svgBox / textSvg，只调用、不要改写、不要删掉。
 4. 必须完整实现并保持这些接口名：
-   META = { title, complexity, inputHint, legend[] }
+   META = { title, complexity, inputHint, legend[], file?, lang? }
    MAX_N、DEFAULT_INPUT
    parseInput(text) → 解析后的数据；非法输入抛 Error，message 为中文说明
    randomInput() → 合法的输入文本
@@ -48,7 +48,8 @@
    - 模板里有关键优化（路径压缩、lazy 标记、哨兵、剪枝等）时，必须在帧里体现出来。
    - 页面里保留「教学演示，以模板代码为准」的说明，不要删除。
 9. META.complexity 按模板实际复杂度填写；若无法确定，写「以模板为准」，不要编造。
-10. 代码面板（骨架已内置，固定部分不得改动，不得另写代码展示）：
+10. 代码面板（骨架已内置，外观对齐模板库 CodeView：深色顶栏 + 内联高亮；固定部分不得改动，不得另写代码展示，不得改播放器脚本）：
+    - META 可填 file（文件名）与 lang（语言徽标），缺省 code.cpp / cpp。
     - 把【模板代码】中与算法直接相关的连续一段，原样粘进 <script type="text/plain" id="code-src"> 与 </script> 之间。不得改写、不得改缩进、不得删除或重排其中的行；代码很长时只截取核心函数或类，去掉头文件、宏、输入输出模板。行号以粘贴后的片段为准，从 1 开始。
     - 每一帧必须带 lines：整数数组，指向 code-src 里这一步正在执行的行号；一步涉及多行（如循环头加循环体首行）可以给多个。初始化帧、返回帧、未找到帧也要指向对应行。
     - note 的描述必须与 lines 高亮的行语义一致。
