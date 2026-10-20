@@ -31,6 +31,12 @@ export interface TemplateSummary {
   has_visual: boolean
 }
 
+/** 一道例题外链，与后端 ExampleLink 对应 */
+export interface ExampleLink {
+  label: string
+  url: string
+}
+
 /** 详情页中的一个版本（副标签），body 为该版本 README 正文 */
 export interface TemplateVariant {
   id: string
@@ -42,6 +48,7 @@ export interface TemplateVariant {
   tags: string[]
   src: string | null
   page: string | null
+  examples: ExampleLink[]
   updated: string | null
   priority: number
   has_visual: boolean
@@ -73,6 +80,7 @@ export interface VersionMetaPayload {
   tags: string[]
   source: string | null
   page: string | null
+  examples: ExampleLink[]
   priority: number
 }
 

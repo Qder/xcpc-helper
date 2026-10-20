@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
-import { FileUp, Save } from 'lucide-vue-next'
+import { FileUp, Plus, Save, Trash2 } from 'lucide-vue-next'
 import {
   NButton,
   NDatePicker,
@@ -22,9 +22,12 @@ import TagCapsuleInput from '@/shared/components/TagCapsuleInput.vue'
 import { useTemplates } from '@/features/template/store'
 import {
   ROOT_VERSION_TOKEN,
+  type ExampleLink,
   type TemplateVariant,
   type VersionUpsertPayload,
 } from '@/features/template/types'
+
+const EXAMPLES_MAX = 12
 
 const props = defineProps<{
   show: boolean
@@ -76,6 +79,7 @@ const form = reactive({
   tags: [] as string[],
   source: '',
   page: '',
+  examples: [] as ExampleLink[],
   priority: 2,
   ext: 'cpp',
   fileName: '',
@@ -111,6 +115,7 @@ function initForm(): void {
       form.tags = [...v.tags]
       form.source = v.src ?? ''
       form.page = v.page ?? ''
+      form.examples = (v.examples ?? []).map((item) => ({ ...item }))
       form.priority = v.priority
       // 扩展名以文件名后缀为准（.h/.hpp 的 lang 也是 cpp，直接取 lang 会错位）
       const suffix = v.file.includes('.')
@@ -126,6 +131,7 @@ function initForm(): void {
       form.tags = []
       form.source = ''
       form.page = ''
+      form.examples = []
       form.priority = 2
       form.ext = 'cpp'
       form.fileName = ''
@@ -193,6 +199,9 @@ async function submit(): Promise<void> {
       tags: form.tags,
       source: form.source.trim() || null,
       page: form.page.trim() || null,
+      examples: form.examples
+        .map((item) => ({ label: item.label.trim(), url: item.url.trim() }))
+        .filter((item) => item.url),
       priority: form.priority,
     },
     body: form.readme,
@@ -269,6 +278,27 @@ async function submit(): Promise<void> {
           />
         </n-form-item>
       </div>
+
+      <n-form-item label="例题链接">
+        <div class="example-list">
+          <div v-for="(ex, index) in form.examples" :key="index" class="example-row">
+            <n-input v-model:value="ex.label" placeholder="名称，可空" />
+            <n-input v-model:value="ex.url" placeholder="https://…" />
+            <n-button quaternary size="small" @click="form.examples.splice(index, 1)">
+              <template #icon><Trash2 :size="14" /></template>
+            </n-button>
+          </div>
+          <n-button
+            dashed
+            size="small"
+            :disabled="form.examples.length >= EXAMPLES_MAX"
+            @click="form.examples.push({ label: '', url: '' })"
+          >
+            <template #icon><Plus :size="14" /></template>
+            添加例题
+          </n-button>
+        </div>
+      </n-form-item>
 
       <n-form-item label="标签">
         <TagCapsuleInput v-model="form.tags" />
@@ -367,5 +397,19 @@ async function submit(): Promise<void> {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.example-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.example-row {
+  display: grid;
+  grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.3fr) auto;
+  gap: 8px;
+  align-items: center;
 }
 </style>

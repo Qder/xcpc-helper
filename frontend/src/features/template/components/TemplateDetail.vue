@@ -5,6 +5,7 @@ import { Inbox, Pencil, Play, Trash2 } from 'lucide-vue-next'
 import { NButton, NTooltip } from 'naive-ui'
 import CodeView from '@/shared/components/CodeView.vue'
 import MarkdownView from '@/shared/components/MarkdownView.vue'
+import { exampleLabel } from '@/features/template/model/examples'
 import { splitTemplateId, visualVersionToken, visualViewerPath } from '@/features/template/model/visual'
 import type { LangId } from '@/shared/types'
 import type { TemplateDetail, TemplateVariant } from '@/features/template/types'
@@ -46,6 +47,9 @@ const lang = computed<LangId>(() => props.variant?.lang ?? props.detail.lang ?? 
 const shownTags = computed(() => (props.variant ? props.variant.tags : props.detail.tags))
 const shownSrc = computed(() => (props.variant ? props.variant.src : props.detail.src))
 const shownPage = computed(() => (props.variant ? props.variant.page : props.detail.page))
+const shownExamples = computed(() =>
+  props.variant ? props.variant.examples : [],
+)
 const shownUpdated = computed(() =>
   props.variant ? props.variant.updated : props.detail.updated,
 )
@@ -121,6 +125,17 @@ const desc = computed(() => props.variant?.body ?? props.detail.desc)
         <span v-if="shownUpdated" class="meta-item"><b>更新于</b>{{ shownUpdated }}</span>
         <span class="meta-item priority"><b>优先级</b>{{ shownPriority }}</span>
       </div>
+      <div v-if="shownExamples.length" class="detail-examples">
+        <b>例题</b>
+        <a
+          v-for="(ex, index) in shownExamples"
+          :key="ex.url + String(index)"
+          class="ex-chip"
+          :href="ex.url"
+          target="_blank"
+          rel="noopener noreferrer"
+        >{{ exampleLabel(ex.label, ex.url) }}</a>
+      </div>
     </div>
     <CodeView :code="code" :file="file" :lang="lang" />
     <MarkdownView v-if="desc" class="detail-desc" :content="desc" />
@@ -181,6 +196,39 @@ const desc = computed(() => props.variant?.body ?? props.detail.desc)
 }
 
 .src-link:hover {
+  text-decoration: underline;
+}
+
+.detail-examples {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.detail-examples b {
+  color: var(--faint);
+  font-weight: 500;
+  font-size: 12px;
+}
+
+.ex-chip {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 99px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.ex-chip:hover {
   text-decoration: underline;
 }
 

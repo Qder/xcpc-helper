@@ -40,6 +40,7 @@ function variant(partial: Partial<TemplateVariant> & Pick<TemplateVariant, 'id' 
     tags: [],
     src: null,
     page: null,
+    examples: [],
     updated: null,
     priority: 2,
     has_visual: true,
