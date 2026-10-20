@@ -1,0 +1,691 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>算法可视化</title>
+<style>
+:root {
+  --hue: 160;
+  --bg: #f6f5f2; --surface: #ffffff; --text: #1f1d1a; --faint: #7a766f; --border: #e0ddd6;
+  --hl: rgba(37, 99, 235, .14); --accent: hsl(var(--hue), 60%, 40%); --warn: #d97706; --ok: #16a34a; --bad: #dc2626; --info: #2563eb;
+  --code-bg: #1c1a17; --code-bg-head: #26231f; --code-border: #35302a; --code-text: #e6e1d6; --code-ln: #6d675c;
+  --code-comment: #7d7a68; --code-string: #d9a35f; --code-number: #c98fc0; --code-preproc: #86b8b1;
+  --code-kw: hsl(var(--hue), 72%, 68%);
+}
+:root[data-theme="dark"] {
+  --bg: #191816; --surface: #23211e; --text: #ece9e3; --faint: #9a958c; --border: #37342f;
+  --hl: rgba(96, 165, 250, .22); --accent: hsl(var(--hue), 55%, 55%); --warn: #f59e0b; --ok: #4ade80; --bad: #f87171; --info: #60a5fa;
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: 16px; background: var(--bg); color: var(--text);
+  font: 14px/1.6 system-ui, -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; margin-bottom: 12px; }
+h1 { font-size: 18px; margin: 0; }
+.chip { font-size: 12px; color: var(--faint); border: 1px solid var(--border); border-radius: 999px; padding: 0 10px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 12px; }
+#stage { min-height: 220px; overflow: auto; }
+.main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+@media (min-width: 900px) { .main.has-code { grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); } }
+#codeWrap { min-width: 0; display: flex; flex-direction: column; background: var(--code-bg);
+  border: 1px solid var(--code-border); border-radius: 8px; overflow: hidden; color: var(--code-text); }
+.code-head { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 9px 12px; background: var(--code-bg-head); border-bottom: 1px solid var(--code-border); flex: none; }
+.code-status { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.status-led { width: 8px; height: 8px; border-radius: 50%; background: hsl(var(--hue), 72%, 62%); flex: none;
+  animation: led-pulse 2.2s ease-out infinite; }
+@keyframes led-pulse {
+  0% { box-shadow: 0 0 0 0 hsl(var(--hue), 72%, 62%, .45); }
+  70% { box-shadow: 0 0 0 7px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.code-file { font: 12px/1.4 ui-monospace, Consolas, "Cascadia Mono", monospace; color: var(--code-text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.code-lang { font: 10.5px/1.4 ui-monospace, Consolas, monospace; color: var(--code-ln);
+  border: 1px solid var(--code-border); border-radius: 4px; padding: 1px 6px; }
+.code-lines { font: 11px/1.4 ui-monospace, Consolas, monospace; color: var(--code-ln); }
+.code-actions { display: flex; gap: 6px; flex: none; }
+#codeWrap.collapsed #code { display: none; }
+#codeWrap.collapsed .code-head { border-bottom: none; }
+#codeWrap .copy-btn { display: inline-flex; align-items: center; height: 26px; padding: 0 10px;
+  border: 1px solid var(--code-border); border-radius: 6px; background: transparent; color: var(--code-text);
+  font-size: 12px; min-height: 26px; }
+#codeWrap .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+#codeWrap .copy-btn.copied { border-color: var(--accent); color: var(--accent); background: hsl(var(--hue), 60%, 40%, .12); }
+#code { max-height: 440px; overflow: auto; position: relative; background: var(--code-bg); padding: 8px 0 16px;
+  font: 13px/1.7 ui-monospace, Consolas, "Cascadia Mono", monospace; color: var(--code-text); }
+.ln { display: flex; white-space: pre; border-left: 3px solid transparent; padding-right: 16px; }
+.ln b { flex: none; width: 3.2em; text-align: right; padding-right: 12px; color: var(--code-ln); font-weight: 400; user-select: none; font-size: 11px; }
+.ln.hl { background: rgb(255 255 255 / 0.06); border-left-color: var(--accent); }
+.ln.hl b { color: var(--accent); }
+.tok-kw { color: var(--code-kw); }
+.tok-str { color: var(--code-string); }
+.tok-num { color: var(--code-number); }
+.tok-cmt { color: var(--code-comment); font-style: italic; }
+.tok-pp { color: var(--code-preproc); }
+#note { min-height: 24px; font-weight: 600; }
+#legend { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--faint); font-size: 12px; margin-top: 8px; }
+#legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.card.controls { position: sticky; top: 0; z-index: 20; }
+button { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 4px 12px; min-height: 32px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+input[type=range] { accent-color: var(--accent); }
+#progress { flex: 1 1 200px; min-width: 120px; }
+textarea { width: 100%; min-height: 60px; font: 13px/1.5 ui-monospace, Consolas, monospace; color: var(--text);
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px; resize: vertical; }
+#error { color: var(--bad); min-height: 20px; font-size: 13px; }
+footer { color: var(--faint); font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title"></h1>
+  <span class="chip" id="complexity"></span>
+  <span class="chip" id="stepInfo">0 / 0</span>
+</header>
+
+<div class="card controls" role="group" aria-label="播放控制">
+  <button id="btnReset" title="重置 (Home)">重置</button>
+  <button id="btnPrev" title="上一步 (←)">上一步</button>
+  <button id="btnPlay" class="primary" title="播放 / 暂停 (空格)">播放</button>
+  <button id="btnNext" title="下一步 (→)">下一步</button>
+  <input id="progress" type="range" min="0" max="0" value="0" aria-label="进度">
+  <label>速度 <input id="speed" type="range" min="1" max="10" value="5" aria-label="速度"></label>
+</div>
+
+<div class="card main has-code" id="main">
+  <div class="viz">
+    <div id="note" aria-live="polite"></div>
+    <div id="stage"></div>
+    <div id="legend"></div>
+  </div>
+  <aside id="codeWrap">
+    <div class="code-head">
+      <div class="code-status">
+        <span class="status-led" aria-hidden="true"></span>
+        <span class="code-file" id="codeFile">code.cpp</span>
+        <span class="code-lang" id="codeLang">cpp</span>
+        <span class="code-lines" id="codeLines"></span>
+      </div>
+      <div class="code-actions">
+        <button type="button" class="copy-btn" id="btnCopyCode">复制</button>
+        <button type="button" class="copy-btn" id="btnToggleCode">收起</button>
+      </div>
+    </div>
+    <div id="code" role="region" aria-label="模板代码"></div>
+  </aside>
+</div>
+
+<div class="card">
+  <label for="input"><b>输入数据</b></label>
+  <textarea id="input" spellcheck="false"></textarea>
+  <div class="controls" style="margin-top:8px">
+    <button id="btnApply">应用输入</button>
+    <button id="btnRandom">随机生成</button>
+    <span id="hint" class="chip"></span>
+  </div>
+  <div id="error" role="alert"></div>
+</div>
+
+<footer>教学演示，以模板代码为准。快捷键：空格 播放/暂停，← → 单步，Home 重置。</footer>
+
+<script type="text/plain" id="code-src">
+void add_edge(int u, int v, ll cap)
+{
+	g[u].push_back((Edge){v, (int)g[v].size(), cap});
+	g[v].push_back((Edge){u, (int)g[u].size() - 1, 0}); //反向边容量 0，用来退流
+}
+
+// 用法：init(n) 清空整张图并设置点数，多测必须重新调用；点编号 1-based。
+//       add_edge(u, v, cap) 建一条 u -> v 的有向边，无向边把两个方向各加一次。
+//       dinic(s, t) 返回最大流；容量用 long long，总流量可以超过 int。
+void init(int n_)
+{
+	n = n_;
+	for(int i = 1; i <= n; i ++) g[i].clear();
+}
+
+bool bfs()
+{
+	for(int i = 1; i <= n; i ++) level[i] = -1;
+	queue<int> q;
+	level[S] = 0;
+	q.push(S);
+	while(!q.empty())
+	{
+		int u = q.front(); q.pop();
+		for(int i = 0; i < (int)g[u].size(); i ++)
+		{
+			Edge &e = g[u][i];
+			if(e.cap > 0 && level[e.to] < 0) //只走还有残量的边，分层图里每个点只标一次
+			{
+				level[e.to] = level[u] + 1;
+				q.push(e.to);
+			}
+		}
+	}
+	return level[T] >= 0; //汇点不可达说明没有增广路了
+}
+
+ll dfs(int u, ll f)
+{
+	if(u == T) return f;
+	for(int &i = cur[u]; i < (int)g[u].size(); i ++) //当前弧：i 是引用，回溯后 cur[u] 自动前进
+	{
+		Edge &e = g[u][i];
+		if(e.cap > 0 && level[e.to] == level[u] + 1)
+		{
+			ll d = dfs(e.to, min(f, e.cap));
+			if(d > 0)
+			{
+				e.cap -= d;
+				g[e.to][e.rev].cap += d; //反向边加流，等价于把已经推过去的流退回来
+				return d;
+			}
+		}
+	}
+	return 0;
+}
+
+ll dinic(int s, int t)
+{
+	S = s; T = t;
+	ll flow = 0;
+	while(bfs()) //每轮 BFS 重建分层图，DFS 只沿 level + 1 的边走，保证单轮无环
+	{
+		for(int i = 1; i <= n; i ++) cur[i] = 0;
+		ll f;
+		while((f = dfs(S, llinf)) > 0) flow += f; //一次 DFS 找到一条增广路就立刻累计
+	}
+	return flow;
+}
+</script>
+
+<script>
+
+  //只调用,不要改写
+  function layoutCircle(n, cx, cy, r) {
+  return Array.from({ length: n }, (_, i) => {
+    const a = -Math.PI / 2 + (2 * Math.PI * i) / n;
+    return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
+  });
+}
+
+function layoutBinary(root, left, right, dx = 44, dy = 60) {
+  const pos = {};
+  let k = 0;
+  (function dfs(u, d) {
+    if (u == null) return;
+    dfs(left[u], d + 1);
+    pos[u] = { x: k++ * dx, y: d * dy };
+    dfs(right[u], d + 1);
+  })(root, 0);
+  return pos;
+}
+
+function layoutTree(root, children, dx = 48, dy = 64) {
+  const pos = {};
+  let leaf = 0;
+  (function dfs(u, d) {
+    const cs = children[u] || [];
+    if (cs.length === 0) { pos[u] = { x: leaf++ * dx, y: d * dy }; return; }
+    cs.forEach((c) => dfs(c, d + 1));
+    pos[u] = { x: (pos[cs[0]].x + pos[cs[cs.length - 1]].x) / 2, y: d * dy };
+  })(root, 0);
+  return pos;
+}
+
+function edgeSvg(a, b, o = {}) {
+  const { r = 18, directed = false, color = 'var(--faint)', width = 2, dash = '' } = o;
+  const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len;
+  const x1 = a.x + ux * r, y1 = a.y + uy * r, x2 = b.x - ux * r, y2 = b.y - uy * r;
+  let s = '<line x1="' + x1 + '" y1="' + y1 + '" x2="' + x2 + '" y2="' + y2 + '" stroke="' + color +
+    '" stroke-width="' + width + '"' + (dash ? ' stroke-dasharray="' + dash + '"' : '') + '/>';
+  if (directed) {
+    const hx = x2 - ux * 9, hy = y2 - uy * 9;
+    s += '<polygon points="' + x2 + ',' + y2 + ' ' + (hx - uy * 5) + ',' + (hy + ux * 5) + ' ' +
+      (hx + uy * 5) + ',' + (hy - ux * 5) + '" fill="' + color + '"/>';
+  }
+  return s;
+}
+
+function svgBox(points, pad = 30) {
+  const xs = points.map((p) => p.x), ys = points.map((p) => p.y);
+  const x0 = Math.min(...xs) - pad, y0 = Math.min(...ys) - pad;
+  return x0 + ' ' + y0 + ' ' + (Math.max(...xs) + pad - x0) + ' ' + (Math.max(...ys) + pad - y0);
+}
+
+function textSvg(x, y, text, o = {}) {
+  const { size = 12, weight = 400, fill = 'var(--text)', anchor = 'middle' } = o;
+  return '<text x="' + x + '" y="' + y + '" font-size="' + size + '" font-weight="' + weight + '" text-anchor="' + anchor +
+    '" fill="' + fill + '" stroke="var(--surface)" stroke-width="3" paint-order="stroke" stroke-linejoin="round">' + text + '</text>';
+}
+/* === ALGO START：只允许修改这一段（示例：二分查找） === */
+const META = {
+  title: 'Dinic 最大流',
+  complexity: '时间 O(V²E)（实际远快于上界）　空间 O(V+E)',
+  inputHint: '第一行 n m s t；随后 m 行 u v w（有向边，1-based）',
+  file: 'Dinic 最大流.cpp',
+  lang: 'cpp',
+  legend: [
+    { color: 'var(--accent)', text: '当前点 / 正在检查的边' },
+    { color: 'var(--warn)', text: 'BFS 队列中的点' },
+    { color: 'var(--ok)', text: '已分层 / 增广路上的边' },
+    { color: 'var(--bad)', text: '残量为 0 的边' },
+    { color: 'var(--border)', text: '未访问的点' },
+  ],
+};
+const MAX_N = 9;
+const MAX_M = 14;
+const DEFAULT_INPUT = '4 5 4 3\n4 2 30\n4 3 20\n2 3 20\n2 1 30\n1 3 30';
+
+// code-src 中的关键行（从 1 开始），用来给每一帧定位高亮行
+const L = {
+  bfsInit: 18, bfsEnqueue: [20, 21], bfsPop: 24, bfsScan: [25, 27, 28],
+  bfsLevel: 30, bfsPush: 31, bfsEnd: 35,
+  dfsEnter: [38, 40], dfsLoop: 41, dfsCheck: [43, 44], dfsRecurse: 46,
+  dfsUpdate: [49, 50], dfsReturn: 51, dfsFail: 55,
+  dinicCall: [58, 62], dinicReset: 64, dinicDone: 68,
+};
+
+function parseInput(text) {
+  const lines = text.trim().split(/\r?\n/);
+  const head = (lines[0] || '').trim().split(/\s+/).map(Number);
+  if (head.length !== 4 || head.some(Number.isNaN)) throw new Error('第一行需要 4 个整数：n m s t');
+  const [n, m, s, t] = head;
+  if (n < 2 || n > MAX_N) throw new Error('点数 n 需在 2 到 ' + MAX_N + ' 之间');
+  if (m < 0 || m > MAX_M) throw new Error('边数 m 需在 0 到 ' + MAX_M + ' 之间');
+  if (s < 1 || s > n || t < 1 || t > n || s === t) throw new Error('源点/汇点必须在 1..n 内且不相等');
+  if (lines.length - 1 < m) throw new Error('边数不足：需要 ' + m + ' 行');
+  const list = [];
+  const seen = new Set();
+  for (let i = 1; i <= m; i++) {
+    const p = (lines[i] || '').trim().split(/\s+/).map(Number);
+    if (p.length !== 3 || p.some(Number.isNaN)) throw new Error('第 ' + (i + 1) + ' 行需要 3 个整数：u v w');
+    const [u, v, w] = p;
+    if (u < 1 || u > n || v < 1 || v > n) throw new Error('边的端点必须在 1..n 内');
+    if (u === v) throw new Error('不支持自环（' + u + '→' + u + '）');
+    if (w < 0 || w > 99) throw new Error('边容量需在 0 到 99 之间');
+    const key = u + ',' + v;
+    if (seen.has(key)) throw new Error('不支持重边（' + u + '→' + v + '）');
+    seen.add(key);
+    list.push([u, v, w]);
+  }
+  return { n, s, t, list };
+}
+
+function randomInput() {
+  const n = 3 + Math.floor(Math.random() * 4);
+  const s = 1, t = n;
+  const pairs = [];
+  for (let u = 1; u <= n; u++) for (let v = 1; v <= n; v++) {
+    if (u !== v && !(u === t) && !(v === s)) pairs.push([u, v]);
+  }
+  const m = Math.min(pairs.length, 4 + Math.floor(Math.random() * 4));
+  for (let i = pairs.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pairs[i], pairs[j]] = [pairs[j], pairs[i]];
+  }
+  const chosen = pairs.slice(0, m);
+  return [n, m, s, t].join(' ') + '\n' + chosen.map(([u, v]) => u + ' ' + v + ' ' + (1 + Math.floor(Math.random() * 9))).join('\n');
+}
+
+/* 每一帧都是自包含快照：cap / level / cur / queue / path 全部拷贝 */
+function buildFrames(data) {
+  const { n, s, t, list } = data;
+  const adj = Array.from({ length: n + 1 }, () => []);
+  const edges = [];
+  const addEdge = (u, v, cap) => {
+    const id = edges.length;
+    edges.push({ u, v, cap, rev: id + 1 });
+    edges.push({ u: v, v: u, cap: 0, rev: id });
+    adj[u].push(id);
+    adj[v].push(id + 1);
+  };
+  list.forEach(([u, v, w]) => addEdge(u, v, w));
+
+  const frames = [];
+  const level = new Array(n + 1).fill(-1);
+  const cur = new Array(n + 1).fill(0);
+  let queue = [];
+  let flow = 0;
+
+  const snap = (extra) => Object.assign({
+    level: level.slice(), cur: cur.slice(), queue: queue.slice(),
+    cap: edges.map((e) => e.cap), flow,
+  }, extra);
+
+  frames.push(snap({
+    note: '初始：' + list.length + ' 条有向边，每条都带一条容量为 0 的反向边；flow = 0',
+    curNode: -1, edge: -1, path: [], phase: 'init', lines: [L.dinicCall[0]],
+  }));
+
+  let round = 1;
+  while (true) {
+    frames.push(snap({ note: '第 ' + round + ' 轮 BFS：level 清零，源点 ' + s + ' 入队', curNode: s, edge: -1, path: [], phase: 'bfs', lines: [L.dinicCall[0], L.bfsInit] }));
+    for (let i = 1; i <= n; i++) level[i] = -1;
+    level[s] = 0;
+    queue = [s];
+    frames.push(snap({ note: 'level[' + s + '] = 0，队列 [' + s + ']', curNode: s, edge: -1, path: [], phase: 'bfs', lines: L.bfsEnqueue }));
+
+    let qi = 0;
+    while (qi < queue.length) {
+      const u = queue[qi++];
+      frames.push(snap({ note: '弹出 ' + u + '，扫描它的出边', curNode: u, edge: -1, path: [], phase: 'bfs', lines: [L.bfsPop] }));
+      for (const eid of adj[u]) {
+        const e = edges[eid];
+        frames.push(snap({ note: u + '→' + e.v + '：残量 ' + e.cap + '，level[' + e.v + '] = ' + (level[e.v] < 0 ? '未标记' : level[e.v]), curNode: u, edge: eid, path: [], phase: 'bfs', lines: L.bfsScan }));
+        if (e.cap > 0 && level[e.v] < 0) {
+          level[e.v] = level[u] + 1;
+          queue.push(e.v);
+          frames.push(snap({ note: '残量 > 0 且未标记：level[' + e.v + '] = ' + level[e.v] + '，' + e.v + ' 入队', curNode: u, edge: eid, path: [], phase: 'bfs', lines: [L.bfsLevel, L.bfsPush] }));
+        }
+      }
+    }
+    frames.push(snap({ note: level[t] < 0 ? '汇点 ' + t + ' 不可达：没有增广路，算法结束' : 'BFS 完成：level[' + t + '] = ' + level[t] + '，可以沿分层图增广', curNode: -1, edge: -1, path: [], phase: 'bfs', lines: [L.bfsEnd] }));
+    if (level[t] < 0) break;
+
+    for (let i = 1; i <= n; i++) cur[i] = 0;
+    frames.push(snap({ note: '当前弧 cur[1..' + n + '] 全部归零', curNode: s, edge: -1, path: [], phase: 'dfs', lines: [L.dinicReset] }));
+
+    const dfs = (u, f, path) => {
+      frames.push(snap({ note: 'dfs(' + u + ', ' + f + ')' + (u === t ? '：到达汇点，返回 ' + f : '：沿 level + 1 的边找增广路'), curNode: u, edge: -1, path: path.slice(), phase: 'dfs', lines: L.dfsEnter }));
+      if (u === t) return f;
+      while (cur[u] < adj[u].length) {
+        const eid = adj[u][cur[u]];
+        const e = edges[eid];
+        frames.push(snap({ note: '检查 ' + u + '→' + e.v + '：残量 ' + e.cap + '，level[' + e.v + '] ' + (e.cap > 0 && level[e.v] === level[u] + 1 ? '正好是下一层' : '不满足 level + 1'), curNode: u, edge: eid, path: path.slice(), phase: 'dfs', lines: L.dfsCheck }));
+        if (e.cap > 0 && level[e.v] === level[u] + 1) {
+          const d = dfs(e.v, Math.min(f, e.cap), path.concat([eid]));
+          if (d > 0) {
+            e.cap -= d;
+            edges[e.rev].cap += d;
+            frames.push(snap({ note: '回溯推流 ' + d + '：' + u + '→' + e.v + ' 残量减为 ' + e.cap + '，反向边增为 ' + edges[e.rev].cap, curNode: u, edge: eid, path: path.concat([eid]), phase: 'dfs', lines: L.dfsUpdate }));
+            frames.push(snap({ note: '返回 ' + d + '，把流量交回上一层', curNode: u, edge: eid, path: path.concat([eid]), phase: 'dfs', lines: [L.dfsReturn] }));
+            return d;
+          }
+        }
+        cur[u]++;
+        frames.push(snap({ note: 'cur[' + u + '] 前进到 ' + cur[u] + '（这条边本轮不再尝试）', curNode: u, edge: -1, path: path.slice(), phase: 'dfs', lines: [L.dfsLoop] }));
+      }
+      frames.push(snap({ note: u + ' 已无可用出边，返回 0', curNode: u, edge: -1, path: path.slice(), phase: 'dfs', lines: [L.dfsFail] }));
+      return 0;
+    };
+
+    while (true) {
+      const f = dfs(s, 1e9, []);
+      if (f <= 0) break;
+      flow += f;
+      frames.push(snap({ note: '增广路完成：flow 增加 ' + f + '，当前 flow = ' + flow, curNode: -1, edge: -1, path: [], phase: 'dfs', lines: [L.dinicCall[1]] }));
+    }
+    round++;
+  }
+
+  frames.push(snap({ note: '最大流 = ' + flow + '（残量网络上从 ' + s + ' 已无法到达 ' + t + '）', curNode: -1, edge: -1, path: [], phase: 'done', lines: [L.dinicDone] }));
+  return frames;
+}
+
+/* 只根据 frame 与 data 绘制，不修改它们 */
+function render(frame, stage, data) {
+  const { n, s, t, list } = data;
+  const meta = [];
+  list.forEach(([u, v]) => { meta.push({ u, v, isReverse: false }); meta.push({ u: v, v: u, isReverse: true }); });
+  const pos = [null, ...layoutCircle(n, 0, 0, 130)];
+  const pts = pos.slice(1);
+  const svg = [];
+  svg.push('<svg viewBox="' + svgBox(pts, 46) + '" style="width:100%;height:360px" role="img" aria-label="网络流图">');
+  for (let i = 0; i < meta.length; i++) {
+    const e = meta[i];
+    if (e.isReverse) continue;
+    const isPath = (frame.path || []).indexOf(i) >= 0;
+    const isCur = frame.edge === i;
+    let color = 'var(--faint)', width = 2, dash = '';
+    if (isPath) { color = 'var(--ok)'; width = 3.5; }
+    if (isCur) { color = 'var(--accent)'; width = 4; }
+    if (frame.cap[i] === 0 && !isPath && !isCur) { color = 'var(--bad)'; dash = '5 4'; }
+    svg.push(edgeSvg(pos[e.u], pos[e.v], { directed: true, color, width, dash, r: 20 }));
+  }
+  for (let i = 0; i < meta.length; i++) {
+    const e = meta[i];
+    if (e.isReverse) continue;
+    const a = pos[e.u], b = pos[e.v];
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    const cap = frame.cap[i];
+    const text = cap + (frame.cap[i + 1] > 0 ? ' / ↩' + frame.cap[i + 1] : '');
+    svg.push(textSvg(mx, my - 7, text, { size: 11, fill: cap === 0 ? 'var(--bad)' : 'var(--text)' }));
+  }
+  for (let u = 1; u <= n; u++) {
+    let stroke = 'var(--border)', width = 2, fill = 'var(--surface)';
+    if (u === frame.curNode) { stroke = 'var(--accent)'; width = 4; }
+    else if ((frame.queue || []).indexOf(u) >= 0 && frame.phase === 'bfs') { stroke = 'var(--warn)'; width = 3; }
+    else if (frame.level[u] >= 0) { stroke = 'var(--ok)'; width = 2.5; }
+    if (u === s || u === t) fill = 'var(--surface)';
+    svg.push('<circle cx="' + pos[u].x + '" cy="' + pos[u].y + '" r="19" fill="' + fill + '" stroke="' + stroke + '" stroke-width="' + width + '"/>');
+    svg.push(textSvg(pos[u].x, pos[u].y + 5, String(u), { size: 14, weight: 700 }));
+    if (u === s) svg.push(textSvg(pos[u].x + 17, pos[u].y - 15, 's', { size: 12, fill: 'var(--info)', weight: 700, anchor: 'start' }));
+    if (u === t) svg.push(textSvg(pos[u].x + 17, pos[u].y - 15, 't', { size: 12, fill: 'var(--bad)', weight: 700, anchor: 'start' }));
+  }
+  svg.push('</svg>');
+  stage.innerHTML = svg.join('');
+
+  const info = document.createElement('div');
+  info.style.cssText = 'display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin-top:8px;font-size:13px';
+  info.innerHTML = '<b>flow = ' + frame.flow + '</b>' +
+    '<span style="color:var(--faint)">queue: ' + ((frame.queue || []).join(' → ') || '空') + '</span>';
+  stage.appendChild(info);
+
+  const levelRow = document.createElement('div');
+  levelRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;margin-top:8px';
+  for (let u = 1; u <= n; u++) {
+    const cell = document.createElement('div');
+    const lv = frame.level[u];
+    cell.style.cssText = 'min-width:58px;text-align:center;border:1px solid ' + (lv >= 0 ? 'var(--ok)' : 'var(--border)') +
+      ';border-radius:7px;padding:3px 6px;font-size:12px;background:var(--surface)';
+    cell.innerHTML = '<span style="color:var(--faint)">level[' + u + ']</span><br><b>' + (lv < 0 ? '∞' : lv) + '</b>';
+    levelRow.appendChild(cell);
+  }
+  stage.appendChild(levelRow);
+}
+/* === ALGO END === */
+
+/* ---------- 播放器（固定部分，不要修改） ---------- */
+const MAX_FRAMES = 5000;
+const $ = (id) => document.getElementById(id);
+let data = null, frames = [], idx = 0, timer = null;
+
+const codeSrcText = (($('code-src') || {}).textContent || '').replace(/^\r?\n/, '').replace(/\s+$/, '');
+const codeLines = codeSrcText.split(/\r?\n/);
+const hasCode = codeLines.length > 0 && codeLines.join('').trim() !== '';
+const KW = /^(?:alignas|alignof|and|and_eq|asm|auto|bitand|bitor|bool|break|case|catch|char|class|compl|concept|const|consteval|constexpr|constinit|continue|decltype|default|delete|do|double|else|enum|explicit|export|extern|false|float|for|friend|goto|if|inline|int|long|mutable|namespace|new|noexcept|not|not_eq|nullptr|operator|or|or_eq|private|protected|public|register|requires|return|short|signed|sizeof|static|static_assert|struct|switch|template|this|throw|true|try|typedef|typeid|typename|union|unsigned|using|virtual|void|volatile|wchar_t|while|xor|xor_eq|ll|ull|i64|u64|vector|string|map|set|queue|stack|pair|cin|cout|endl)$/;
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function highlightCpp(line) {
+  let i = 0, out = '', n = line.length;
+  const push = (cls, text) => {
+    const t = escapeHtml(text);
+    out += cls ? '<span class="' + cls + '">' + t + '</span>' : t;
+  };
+  while (i < n) {
+    if (line[i] === '/' && line[i + 1] === '/') { push('tok-cmt', line.slice(i)); break; }
+    if (line[i] === '/' && line[i + 1] === '*') {
+      const end = line.indexOf('*/', i + 2);
+      const j = end < 0 ? n : end + 2;
+      push('tok-cmt', line.slice(i, j));
+      i = j; continue;
+    }
+    if (line[i] === '"' || line[i] === "'") {
+      const q = line[i];
+      let j = i + 1;
+      while (j < n) {
+        if (line[j] === '\\') { j += 2; continue; }
+        if (line[j] === q) { j++; break; }
+        j++;
+      }
+      push('tok-str', line.slice(i, j));
+      i = j; continue;
+    }
+    if (line[i] === '#' && !line.slice(0, i).trim()) { push('tok-pp', line.slice(i)); break; }
+    if (/[A-Za-z_]/.test(line[i])) {
+      let j = i + 1;
+      while (j < n && /[A-Za-z0-9_]/.test(line[j])) j++;
+      const w = line.slice(i, j);
+      push(KW.test(w) ? 'tok-kw' : '', w);
+      i = j; continue;
+    }
+    if (/[0-9]/.test(line[i])) {
+      let j = i + 1;
+      while (j < n && /[0-9a-fA-FxXlLuU.]/.test(line[j])) j++;
+      push('tok-num', line.slice(i, j));
+      i = j; continue;
+    }
+    out += escapeHtml(line[i]);
+    i++;
+  }
+  return out || ' ';
+}
+const lineEls = [];
+if (hasCode) {
+  const box = $('code');
+  codeLines.forEach((text, i) => {
+    const row = document.createElement('div');
+    row.className = 'ln';
+    const num = document.createElement('b');
+    num.textContent = String(i + 1);
+    const span = document.createElement('span');
+    span.innerHTML = highlightCpp(text === '' ? ' ' : text);
+    row.appendChild(num); row.appendChild(span);
+    box.appendChild(row); lineEls.push(row);
+  });
+  $('codeFile').textContent = (META && META.file) || 'code.cpp';
+  $('codeLang').textContent = (META && META.lang) || 'cpp';
+  $('codeLines').textContent = codeLines.length + ' 行';
+} else {
+  $('codeWrap').style.display = 'none';
+  $('main').classList.remove('has-code');
+}
+let codeOpen = hasCode;
+if (hasCode) {
+  $('btnToggleCode').onclick = () => {
+    codeOpen = !codeOpen;
+    $('codeWrap').classList.toggle('collapsed', !codeOpen);
+    $('main').classList.toggle('has-code', codeOpen);
+    $('btnToggleCode').textContent = codeOpen ? '收起' : '展开';
+  };
+  let copiedTimer = 0;
+  $('btnCopyCode').onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(codeSrcText);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = codeSrcText;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    $('btnCopyCode').textContent = '已复制';
+    $('btnCopyCode').classList.add('copied');
+    clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(() => {
+      $('btnCopyCode').textContent = '复制';
+      $('btnCopyCode').classList.remove('copied');
+    }, 1600);
+  };
+}
+function highlight(lines) {
+  if (!hasCode) return;
+  lineEls.forEach((el) => el.classList.remove('hl'));
+  const hit = (lines || []).filter((n) => n >= 1 && n <= lineEls.length);
+  hit.forEach((n) => lineEls[n - 1].classList.add('hl'));
+  if (!hit.length) return;
+  const box = $('code'), first = lineEls[hit[0] - 1], last = lineEls[hit[hit.length - 1] - 1];
+  if (first.offsetTop < box.scrollTop) box.scrollTop = Math.max(0, first.offsetTop - 8);
+  else if (last.offsetTop + last.offsetHeight > box.scrollTop + box.clientHeight) {
+    box.scrollTop = last.offsetTop + last.offsetHeight - box.clientHeight + 8;
+  }
+}
+
+function setError(msg) { $('error').textContent = msg || ''; }
+function stop() { if (timer) { clearInterval(timer); timer = null; } $('btnPlay').textContent = '播放'; }
+function show(i) {
+  if (!frames.length) return;
+  idx = Math.max(0, Math.min(frames.length - 1, i));
+  const f = frames[idx];
+  $('note').textContent = f.note || '';
+  render(f, $('stage'), data);
+  highlight(f.lines);
+  $('stepInfo').textContent = (idx + 1) + ' / ' + frames.length;
+  $('progress').value = String(idx);
+}
+function play() {
+  if (!frames.length) return;
+  if (idx >= frames.length - 1) show(0);
+  stop();
+  $('btnPlay').textContent = '暂停';
+  const delay = 1100 - Number($('speed').value) * 100;
+  timer = setInterval(() => {
+    if (idx >= frames.length - 1) { stop(); return; }
+    show(idx + 1);
+  }, delay);
+}
+function load(text) {
+  stop(); setError('');
+  try {
+    const parsed = parseInput(text);
+    const built = buildFrames(parsed);
+    if (!built.length) throw new Error('没有可演示的步骤');
+    if (built.length > MAX_FRAMES) throw new Error('步骤过多（' + built.length + '），请缩小输入规模');
+    data = parsed; frames = built;
+    $('progress').max = String(frames.length - 1);
+    show(0);
+  } catch (e) {
+    setError(e && e.message ? e.message : String(e));
+  }
+}
+
+$('title').textContent = META.title;
+document.title = META.title + ' · 算法可视化';
+$('complexity').textContent = META.complexity;
+$('hint').textContent = META.inputHint;
+$('legend').innerHTML = META.legend.map((x) => '<span><i style="background:' + x.color + '"></i>' + x.text + '</span>').join('');
+$('input').value = DEFAULT_INPUT;
+
+$('btnPlay').onclick = () => (timer ? stop() : play());
+$('btnNext').onclick = () => { stop(); show(idx + 1); };
+$('btnPrev').onclick = () => { stop(); show(idx - 1); };
+$('btnReset').onclick = () => { stop(); show(0); };
+$('progress').oninput = (e) => { stop(); show(Number(e.target.value)); };
+$('speed').oninput = () => { if (timer) play(); };
+$('btnApply').onclick = () => load($('input').value);
+$('btnRandom').onclick = () => { $('input').value = randomInput(); load($('input').value); };
+
+document.addEventListener('keydown', (e) => {
+  if (e.target && /^(TEXTAREA|INPUT)$/.test(e.target.tagName) && e.target.type !== 'range') return;
+  if (e.code === 'Space') { e.preventDefault(); timer ? stop() : play(); }
+  else if (e.code === 'ArrowRight') { stop(); show(idx + 1); }
+  else if (e.code === 'ArrowLeft') { stop(); show(idx - 1); }
+  else if (e.code === 'Home') { stop(); show(0); }
+});
+
+window.addEventListener('message', (e) => {
+  const m = e.data;
+  if (!m || m.type !== 'xcpc-theme') return;
+  document.documentElement.dataset.theme = m.dark ? 'dark' : 'light';
+  if (typeof m.hue === 'number') {
+    document.documentElement.style.setProperty('--hue', String(m.hue));
+    document.documentElement.style.setProperty('--accent', 'hsl(' + m.hue + ', 55%, ' + (m.dark ? 55 : 40) + '%)');
+  }
+});
+if (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) {
+  document.documentElement.dataset.theme = 'dark';
+}
+
+load(DEFAULT_INPUT);
+</script>
+</body>
+</html>
