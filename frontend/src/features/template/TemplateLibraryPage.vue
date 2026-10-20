@@ -6,11 +6,23 @@ import {
   Flag,
   FolderSync,
   Inbox,
+  ListChecks,
   Plus,
   RefreshCw,
   Search,
+  Trash2,
 } from 'lucide-vue-next'
-import { NAlert, NButton, NEmpty, NInput, NSelect, NSpin, NTooltip, useMessage } from 'naive-ui'
+import {
+  NAlert,
+  NButton,
+  NCheckbox,
+  NEmpty,
+  NInput,
+  NSelect,
+  NSpin,
+  NTooltip,
+  useMessage,
+} from 'naive-ui'
 import DeleteConfirmModal from '@/shared/components/DeleteConfirmModal.vue'
 import TemplateCreateModal from '@/features/template/components/TemplateCreateModal.vue'
 import TemplateDetail from '@/features/template/components/TemplateDetail.vue'
@@ -38,6 +50,7 @@ const {
   reload,
   refresh,
   deleteTemplate,
+  batchDeleteTemplates,
   removeVersion,
   categoryHue,
   categoryName,
@@ -63,6 +76,10 @@ const versionForm = ref<{
 } | null>(null)
 const deletingVersion = ref<{ templateId: string; variant: TemplateVariant } | null>(null)
 const versionDeleteLoading = ref(false)
+const selecting = ref(false)
+const selectedIds = ref<Set<string>>(new Set())
+const showBatchDelete = ref(false)
+const batchDeleteLoading = ref(false)
 
 /** 已加载的详情缓存（驱动右侧详情与列表中的副标签展开） */
 const details = ref<Record<string, TemplateDetailData>>({})
@@ -253,6 +270,79 @@ async function onVersionSaved(detailId: string, versionName: string): Promise<vo
   activeVariantId.value = variant?.id ?? detail.variants[0]?.id ?? null
 }
 
+const selectedCount = computed(() => selectedIds.value.size)
+
+const allVisibleSelected = computed(
+  () => templates.value.length > 0 && templates.value.every((t) => selectedIds.value.has(t.id)),
+)
+
+const someVisibleSelected = computed(
+  () => templates.value.some((t) => selectedIds.value.has(t.id)) && !allVisibleSelected.value,
+)
+
+const batchDeleteTarget = computed(() => {
+  const ids = [...selectedIds.value]
+  if (ids.length === 0) return ''
+  if (ids.length === 1) return `${ids[0]}（含全部版本）`
+  const preview = ids.slice(0, 3).join('、')
+  const more = ids.length > 3 ? ` 等 ${ids.length} 个` : ` 共 ${ids.length} 个`
+  return `${preview}${more}模板（含全部版本）`
+})
+
+function enterSelectMode(): void {
+  selecting.value = true
+  selectedIds.value = new Set()
+}
+
+function exitSelectMode(): void {
+  selecting.value = false
+  selectedIds.value = new Set()
+  showBatchDelete.value = false
+}
+
+function setSelected(id: string, checked: boolean): void {
+  const next = new Set(selectedIds.value)
+  if (checked) next.add(id)
+  else next.delete(id)
+  selectedIds.value = next
+}
+
+function toggleSelected(id: string): void {
+  setSelected(id, !selectedIds.value.has(id))
+}
+
+function toggleSelectAll(checked: boolean): void {
+  selectedIds.value = checked ? new Set(templates.value.map((t) => t.id)) : new Set()
+}
+
+function onRowClick(template: TemplateSummary): void {
+  if (selecting.value) {
+    toggleSelected(template.id)
+    return
+  }
+  void selectTemplate(template)
+}
+
+async function confirmBatchDelete(): Promise<void> {
+  const ids = [...selectedIds.value]
+  if (!ids.length) return
+  batchDeleteLoading.value = true
+  try {
+    await batchDeleteTemplates(ids)
+    message.success(`已删除 ${ids.length} 个模板`)
+    for (const id of ids) delete details.value[id]
+    if (activeId.value && ids.includes(activeId.value)) {
+      activeId.value = null
+      activeVariantId.value = null
+    }
+    exitSelectMode()
+  } catch (err) {
+    message.error(err instanceof Error ? err.message : '批量删除失败，请重试')
+  } finally {
+    batchDeleteLoading.value = false
+  }
+}
+
 async function confirmDeleteVersion(): Promise<void> {
   const target = deletingVersion.value
   if (!target) return
@@ -327,46 +417,81 @@ async function confirmDeleteVersion(): Promise<void> {
             </Transition>
           </div>
           <div class="tpl-tools">
-            <n-tooltip>
-              <template #trigger>
-                <n-button
-                  size="small"
-                  quaternary
-                  @click="showCreate = true"
-                >
-                  <template #icon><Plus :size="14" /></template>
-                </n-button>
-              </template>
-              新增模板
-            </n-tooltip>
-            <n-tooltip>
-              <template #trigger>
-                <n-button
-                  size="small"
-                  quaternary
-                  :loading="reloading"
-                  @click="onReload"
-                >
-                  <template #icon><RefreshCw :size="14" /></template>
-                </n-button>
-              </template>
-              手动刷新
-            </n-tooltip>
-            <n-tooltip>
-              <template #trigger>
-                <n-button size="small" quaternary @click="showTransfer = true">
-                  <template #icon><FolderSync :size="14" /></template>
-                </n-button>
-              </template>
-              导入 / 导出
-            </n-tooltip>
-            <n-select
-              v-model:value="sortMode"
-              class="sort-select"
-              size="small"
-              :options="sortOptions"
-            />
-            <span class="toolbar-meta">{{ templates.length }} 个模板</span>
+            <template v-if="selecting">
+              <n-checkbox
+                :checked="allVisibleSelected"
+                :indeterminate="someVisibleSelected"
+                @update:checked="toggleSelectAll"
+              >
+                全选
+              </n-checkbox>
+              <n-button size="small" @click="exitSelectMode">取消</n-button>
+              <n-button
+                size="small"
+                type="error"
+                :disabled="selectedCount === 0"
+                @click="showBatchDelete = true"
+              >
+                <template #icon><Trash2 :size="14" /></template>
+                删除{{ selectedCount ? ` ${selectedCount}` : '' }}
+              </n-button>
+              <span class="toolbar-meta">已选 {{ selectedCount }} / {{ templates.length }}</span>
+            </template>
+            <template v-else>
+              <n-tooltip>
+                <template #trigger>
+                  <n-button
+                    size="small"
+                    quaternary
+                    @click="showCreate = true"
+                  >
+                    <template #icon><Plus :size="14" /></template>
+                  </n-button>
+                </template>
+                新增模板
+              </n-tooltip>
+              <n-tooltip>
+                <template #trigger>
+                  <n-button
+                    size="small"
+                    quaternary
+                    :loading="reloading"
+                    @click="onReload"
+                  >
+                    <template #icon><RefreshCw :size="14" /></template>
+                  </n-button>
+                </template>
+                手动刷新
+              </n-tooltip>
+              <n-tooltip>
+                <template #trigger>
+                  <n-button size="small" quaternary @click="showTransfer = true">
+                    <template #icon><FolderSync :size="14" /></template>
+                  </n-button>
+                </template>
+                导入 / 导出
+              </n-tooltip>
+              <n-tooltip>
+                <template #trigger>
+                  <n-button
+                    size="small"
+                    quaternary
+                    :disabled="!templates.length"
+                    @click="enterSelectMode"
+                  >
+                    <template #icon><ListChecks :size="14" /></template>
+                  </n-button>
+                </template>
+                批量删除
+              </n-tooltip>
+              <n-select
+                v-model:value="sortMode"
+                class="sort-select"
+                size="small"
+                :options="sortOptions"
+              />
+              <span class="toolbar-meta">{{ templates.length }} 个模板</span>
+            </template>
           </div>
         </div>
 
@@ -393,13 +518,23 @@ async function confirmDeleteVersion(): Promise<void> {
                 v-for="(template, index) in templates"
                 :key="template.id"
                 class="tpl-item"
-                :class="{ open: openVariants[template.id] }"
+                :class="{
+                  open: openVariants[template.id],
+                  checked: selectedIds.has(template.id),
+                }"
               >
+                <div class="tpl-row-wrap">
+                  <label v-if="selecting" class="tpl-check" @click.stop>
+                    <n-checkbox
+                      :checked="selectedIds.has(template.id)"
+                      @update:checked="(checked) => setSelected(template.id, checked)"
+                    />
+                  </label>
                 <button
                   type="button"
                   class="tpl-row"
                   :class="{ active: template.id === activeTemplate?.id }"
-                  @click="selectTemplate(template)"
+                  @click="onRowClick(template)"
                 >
                   <span class="tpl-idx">{{ String(index + 1).padStart(2, '0') }}</span>
                   <span class="tpl-cell">
@@ -426,6 +561,7 @@ async function confirmDeleteVersion(): Promise<void> {
                   </span>
                   <ChevronRight class="tpl-chev" :size="14" />
                 </button>
+                </div>
                 <div
                   v-if="details[template.id]"
                   class="tpl-variants"
@@ -518,6 +654,14 @@ async function confirmDeleteVersion(): Promise<void> {
       :loading="versionDeleteLoading"
       @update:show="deletingVersion = null"
       @confirm="confirmDeleteVersion"
+    />
+    <DeleteConfirmModal
+      :show="showBatchDelete"
+      title="批量删除模板"
+      :target="batchDeleteTarget"
+      :loading="batchDeleteLoading"
+      @update:show="showBatchDelete = $event"
+      @confirm="confirmBatchDelete"
     />
   </div>
 </template>

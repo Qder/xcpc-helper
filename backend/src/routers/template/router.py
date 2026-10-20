@@ -16,6 +16,7 @@ from modules.template.schemas import (
     DiagnosticsResponse,
     ReloadResponse,
     SortMode,
+    TemplateBatchDelete,
     TemplateCreate,
     TemplateDetail,
     TemplateRename,
@@ -204,6 +205,16 @@ async def rename_template(
 async def delete_template(category: str, name: str, service: ServiceDep) -> None:
     """DELETE /api/templates/{category}/{name}：删除空主标签。"""
     await asyncio.to_thread(service.delete_template, category, name)
+
+
+@router.post(
+    "/templates/batch-delete", status_code=status.HTTP_204_NO_CONTENT
+)
+async def batch_delete_templates(
+    payload: TemplateBatchDelete, service: ServiceDep
+) -> None:
+    """POST /api/templates/batch-delete：批量删除主标签（含全部版本）。"""
+    await asyncio.to_thread(service.delete_templates, payload)
 
 
 @router.post(

@@ -85,7 +85,7 @@ uv run uvicorn --app-dir src main:app --host 127.0.0.1 --port 8000
 
 浏览器访问 <http://127.0.0.1:8000> 即可使用。
 
-之后日常使用也可以直接运行仓库根目录的 start.bat（Windows）或 ./start.sh（Linux/macOS）启动（前提是已运行过环境搭建脚本完成构建）。
+之后日常使用也可以直接运行仓库根目录的 `start.bat`（Windows）或 `./start.sh`（Linux/macOS）。源码检出里没有 `frontend/dist` 时，启动脚本会在本机已安装 Node.js 的前提下自动构建前端，并在服务就绪后打开浏览器。
 
 ### 提交前的自检
 

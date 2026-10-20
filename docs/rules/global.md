@@ -31,6 +31,7 @@ alwaysApply: true
 | --- | --- |
 | [frontend.md](frontend.md) | 前端开发规范（技术栈、目录结构、组件与测试要求） |
 | [backend.md](backend.md) | 后端开发规范（技术栈、目录结构、类型注解、异步、异常处理） |
+| [visual-prompt.md](visual-prompt.md) | 算法可视化生成调度：提到某算法可视化时去读对应提示词 |
 | [../design/README.md](../design/README.md) | 设计文档索引（按功能分文档，含状态与新功能流程） |
 | [../design/conventions.md](../design/conventions.md) | 跨功能公共架构约定（分层、扩展方式、写入约定、鲁棒哲学） |
 | [../requirements.md](../requirements.md) | 功能清单（含优先级）与非功能需求 |

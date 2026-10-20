@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { Check, Monitor, Moon, Palette, Sun } from 'lucide-vue-next'
+import { Check, Monitor, Moon, Palette, PanelLeftClose, PanelLeftOpen, Sun } from 'lucide-vue-next'
 import { NPopover, NSlider, NTooltip } from 'naive-ui'
 import type { ThemeMode } from '@/shared/composables/useTheme'
 
 defineProps<{
   pageMeta: { group: string; sub: string }
+  navCollapsed: boolean
   mode: ThemeMode
   modeIcon: 'sun' | 'moon' | 'monitor'
   modeLabel: string
@@ -14,6 +15,7 @@ defineProps<{
 }>()
 
 const emit = defineEmits<{
+  'toggle-nav': []
   'cycle-theme': []
   'set-mode': [mode: ThemeMode]
   'set-hue': [value: number]
@@ -46,6 +48,20 @@ function chooseTheme(value: ThemeMode): void {
 <template>
   <header class="topbar">
     <div class="crumb">
+      <n-tooltip>
+        <template #trigger>
+          <button
+            type="button"
+            class="icon-btn"
+            :aria-label="navCollapsed ? '展开导航' : '收起导航'"
+            @click="emit('toggle-nav')"
+          >
+            <PanelLeftOpen v-if="navCollapsed" :size="17" />
+            <PanelLeftClose v-else :size="17" />
+          </button>
+        </template>
+        {{ navCollapsed ? '展开导航' : '收起导航' }}
+      </n-tooltip>
       <h1 class="page-title">{{ pageMeta.group }}</h1>
       <span class="page-sub">{{ pageMeta.sub ? `/ ${pageMeta.sub}` : '' }}</span>
     </div>

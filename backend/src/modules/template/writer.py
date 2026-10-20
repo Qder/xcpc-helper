@@ -419,8 +419,8 @@ def delete_template_dir(content_dir: Path, category: str, name: str) -> None:
 def delete_template_tree(content_dir: Path, category: str, name: str) -> None:
     """物理删除整棵模板目录树（含所有版本）。
 
-    仅供导入的 overwrite 策略使用；交互删除仍走"先删版本再删空模板"
-    的防误删路径（delete_template_dir 拒绝非空目录）。
+    供导入 overwrite 与交互式批量删除使用；单条交互删除仍走
+    「先删版本再删空模板」的防误删路径（delete_template_dir 拒绝非空目录）。
     """
     target = content_dir / category / name
     if not target.is_dir():

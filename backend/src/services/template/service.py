@@ -7,7 +7,7 @@ import sqlite3
 import threading
 
 from core.config import Settings, get_settings
-from core.exceptions import NotFoundError
+from core.exceptions import BadRequestError, NotFoundError
 from modules.template import repository, writer
 from modules.template.models import Diagnostic, TemplateNode, VersionNode
 from modules.template.scanner import scan_content
@@ -15,6 +15,7 @@ from modules.template.schemas import (
     ROOT_VERSION_TOKEN,
     CategoryInfo,
     SortMode,
+    TemplateBatchDelete,
     TemplateCreate,
     TemplateDetail,
     TemplateRename,
@@ -261,6 +262,26 @@ class TemplateService:
             writer.delete_template_dir(self._settings.content_dir, category, name)
             self.rebuild()
 
+    def delete_templates(self, payload: TemplateBatchDelete) -> None:
+        """批量物理删除主标签整棵目录树（含全部版本），索引只重建一次。
+
+        先校验全部 id 再落盘：任一不存在则整批拒绝，避免删一半。
+        """
+        targets = _unique_template_ids(payload.ids)
+        with self._lock:
+            missing = [
+                f"{category}/{name}"
+                for category, name in targets
+                if not (self._settings.content_dir / category / name).is_dir()
+            ]
+            if missing:
+                raise NotFoundError(f"模板不存在: {', '.join(missing)}")
+            for category, name in targets:
+                writer.delete_template_tree(
+                    self._settings.content_dir, category, name
+                )
+            self.rebuild()
+
     def create_version(
         self, category: str, name: str, payload: VersionUpsert
     ) -> TemplateDetail:
@@ -304,6 +325,29 @@ class TemplateService:
             )
             self.rebuild()
         return self.get_detail(f"{category}/{name}")
+
+
+def _parse_template_id(template_id: str) -> tuple[str, str]:
+    """把「分类/模板名」拆成路径段；名称约定禁止「/」，因此恰好两段。"""
+    parts = template_id.split("/")
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        raise BadRequestError(f"模板 id 无效: {template_id}")
+    return parts[0], parts[1]
+
+
+def _unique_template_ids(ids: list[str]) -> list[tuple[str, str]]:
+    """去空白、去重并解析 id；空列表视为参数错误。"""
+    seen: set[str] = set()
+    targets: list[tuple[str, str]] = []
+    for raw in ids:
+        template_id = raw.strip()
+        if not template_id or template_id in seen:
+            continue
+        seen.add(template_id)
+        targets.append(_parse_template_id(template_id))
+    if not targets:
+        raise BadRequestError("未指定要删除的模板")
+    return targets
 
 
 def _row_to_summary(row: sqlite3.Row) -> TemplateSummary:

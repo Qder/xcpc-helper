@@ -2,6 +2,7 @@
 
 import { ref } from 'vue'
 import {
+  batchDeleteTemplates as apiBatchDeleteTemplates,
   createTemplate as apiCreateTemplate,
   createVersion as apiCreateVersion,
   deleteTemplate as apiDeleteTemplate,
@@ -117,6 +118,12 @@ async function deleteTemplate(id: string): Promise<void> {
   await refresh()
 }
 
+/** 批量删除主标签及其全部版本 */
+async function batchDeleteTemplates(ids: string[]): Promise<void> {
+  await apiBatchDeleteTemplates(ids)
+  await refresh()
+}
+
 /** 新建/更新版本，返回该模板的最新详情 */
 async function saveVersion(
   templateId: string,
@@ -160,6 +167,7 @@ export function useTemplates() {
     refresh,
     createTemplate,
     deleteTemplate,
+    batchDeleteTemplates,
     saveVersion,
     removeVersion,
     categoryHue,

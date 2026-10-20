@@ -133,6 +133,16 @@ div.n-base-selection-input {
   overflow: hidden;
 }
 
+.app-shell.nav-collapsed {
+  grid-template-columns: 0 1fr;
+}
+
+.app-shell.nav-collapsed .sidebar {
+  overflow: hidden;
+  border-right: none;
+  pointer-events: none;
+}
+
 .main-pane {
   position: relative;
   display: flex;
@@ -417,7 +427,7 @@ div.n-base-selection-input {
 
 .crumb {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 10px;
   min-width: 0;
 }
@@ -704,6 +714,19 @@ div.n-base-selection-input {
   min-height: 100%;
 }
 
+.tpl-row-wrap {
+  display: flex;
+  align-items: stretch;
+}
+
+.tpl-check {
+  display: flex;
+  align-items: center;
+  flex: none;
+  padding-left: 12px;
+  cursor: pointer;
+}
+
 .tpl-row {
   position: relative;
   display: grid;
@@ -719,9 +742,18 @@ div.n-base-selection-input {
   transition: background 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
 }
 
+.tpl-row-wrap .tpl-row {
+  flex: 1;
+  min-width: 0;
+}
+
 .tpl-item {
   position: relative;
   border-bottom: 1px solid var(--border);
+}
+
+.tpl-item.checked .tpl-row {
+  background: var(--accent-softer);
 }
 
 .tpl-row:hover {
@@ -1439,6 +1471,10 @@ div.n-base-selection-input {
 @media (max-width: 720px) {
   .app-shell {
     grid-template-columns: 68px 1fr;
+  }
+
+  .app-shell.nav-collapsed {
+    grid-template-columns: 0 1fr;
   }
 
   .brand {

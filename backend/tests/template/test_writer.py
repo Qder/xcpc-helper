@@ -151,6 +151,13 @@ def test_delete_template_dir(content_dir: Path) -> None:
         writer.delete_template_dir(content_dir, "math", "not-exist")
 
 
+def test_delete_template_tree(content_dir: Path) -> None:
+    writer.delete_template_tree(content_dir, "ds", "dsu")
+    assert not (content_dir / "ds" / "dsu").exists()
+    with pytest.raises(NotFoundError):
+        writer.delete_template_tree(content_dir, "ds", "dsu")
+
+
 # ===== 版本操作 =====
 
 
@@ -386,6 +393,33 @@ def test_api_create_and_delete_template(client: TestClient) -> None:
 def test_api_delete_non_empty_template_rejected(client: TestClient) -> None:
     resp = client.delete("/api/templates/math/sieve")
     assert resp.status_code == 409
+
+
+def test_api_batch_delete_templates(client: TestClient) -> None:
+    resp = client.post(
+        "/api/templates/batch-delete",
+        json={"ids": ["math/sieve", "ds/dsu", "math/sieve"]},
+    )
+    assert resp.status_code == 204
+    assert client.get("/api/templates/math/sieve").status_code == 404
+    assert client.get("/api/templates/ds/dsu").status_code == 404
+    # 未点名的模板仍在
+    assert client.get("/api/templates/misc/empty-tpl").status_code == 200
+
+
+def test_api_batch_delete_rejects_invalid_or_missing(client: TestClient) -> None:
+    resp = client.post("/api/templates/batch-delete", json={"ids": []})
+    assert resp.status_code == 400
+    resp = client.post("/api/templates/batch-delete", json={"ids": ["no-slash"]})
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "bad_request"
+    resp = client.post(
+        "/api/templates/batch-delete",
+        json={"ids": ["math/sieve", "math/not-exist"]},
+    )
+    assert resp.status_code == 404
+    # 整批拒绝：存在的目标也不应被删
+    assert client.get("/api/templates/math/sieve").status_code == 200
 
 
 def test_api_version_crud(client: TestClient) -> None:

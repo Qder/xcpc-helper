@@ -70,6 +70,15 @@ export function deleteTemplate(id: string): Promise<void> {
   return request<void>(`/templates/${encodeId(id)}`, { method: 'DELETE' })
 }
 
+/** 批量删除主标签（含全部版本），ids 为「分类/模板名」 */
+export function batchDeleteTemplates(ids: string[]): Promise<void> {
+  return request<void>('/templates/batch-delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids }),
+  })
+}
+
 export function createVersion(
   templateId: string,
   payload: VersionUpsertPayload,

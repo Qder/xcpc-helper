@@ -88,6 +88,12 @@ class TemplateRename(BaseModel):
     new_name: str | None = None
 
 
+class TemplateBatchDelete(BaseModel):
+    """批量删除主标签（含全部版本）。ids 为「分类/模板名」。"""
+
+    ids: list[str]
+
+
 class VersionMetaInput(BaseModel):
     """版本元数据输入：与 README front matter 一一对应。"""
 

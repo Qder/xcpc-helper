@@ -12,9 +12,11 @@ import {
 import AppShell from '@/app/AppShell.vue'
 import { NAV_GROUPS } from '@/app/nav'
 import { createThemeOverrides } from '@/app/theme'
+import { useNavCollapse } from '@/app/use-nav-collapse'
 import { useTheme } from '@/shared/composables/useTheme'
 
 const { mode, hue, isDark, modeIcon, modeLabel, cycleMode, setMode, setHue } = useTheme()
+const { navCollapsed, toggleNav } = useNavCollapse()
 
 const route = useRoute()
 const router = useRouter()
@@ -86,6 +88,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
         :active-path="activePath"
         :open-groups="openGroups"
         :page-meta="pageMeta"
+        :nav-collapsed="navCollapsed"
         :mode="mode"
         :mode-icon="modeIcon"
         :mode-label="modeLabel"
@@ -93,6 +96,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
         :is-dark="isDark"
         @navigate="navigate"
         @toggle="toggleGroup"
+        @toggle-nav="toggleNav"
         @cycle-theme="cycleMode"
         @set-mode="setMode"
         @set-hue="setHue"

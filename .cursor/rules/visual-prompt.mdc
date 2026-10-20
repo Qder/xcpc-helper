@@ -1,0 +1,8 @@
+---
+description: 用户要把某算法做成可视化 / 生成 visual.html 时，按分类调用提示词并写入版本目录
+alwaysApply: true
+---
+
+# 算法可视化生成（调度）
+
+本规则的正文统一维护在 `docs/rules/visual-prompt.md`，请阅读并严格遵循该文件。

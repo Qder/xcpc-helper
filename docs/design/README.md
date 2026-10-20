@@ -9,6 +9,7 @@
 | [template/printbook.md](template/printbook.md) | 打印册（printbook） | 已实现 |
 | [template/transfer.md](template/transfer.md) | 导入 / 导出（transfer） | 已实现 |
 | [template/visualizer.md](template/visualizer.md) | 算法可视化（template / visualizer） | 已实现 |
+| [template/visual-prompt/README.md](template/visual-prompt/README.md) | 算法可视化生成提示词（通用核心 + 类型附录） | 长期有效 |
 | [activity/conventions.md](activity/conventions.md) | 训练统计聚合（activity）公共约定 | 已实现 |
 | [activity/codeforces.md](activity/codeforces.md) | activity · Codeforces 适配 | 已实现 |
 | [activity/atcoder.md](activity/atcoder.md) | activity · AtCoder 适配 | 已实现 |

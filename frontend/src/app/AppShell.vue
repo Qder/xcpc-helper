@@ -7,6 +7,7 @@ defineProps<{
   activePath: string
   openGroups: Record<string, boolean>
   pageMeta: { group: string; sub: string }
+  navCollapsed: boolean
   mode: ThemeMode
   modeIcon: 'sun' | 'moon' | 'monitor'
   modeLabel: string
@@ -17,6 +18,7 @@ defineProps<{
 const emit = defineEmits<{
   navigate: [path: string]
   toggle: [id: string]
+  'toggle-nav': []
   'cycle-theme': []
   'set-mode': [mode: ThemeMode]
   'set-hue': [value: number]
@@ -24,7 +26,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="app-shell">
+  <div class="app-shell" :class="{ 'nav-collapsed': navCollapsed }">
     <SideNav
       :active-path="activePath"
       :open-groups="openGroups"
@@ -34,11 +36,13 @@ const emit = defineEmits<{
     <main class="main-pane">
       <TopBar
         :page-meta="pageMeta"
+        :nav-collapsed="navCollapsed"
         :mode="mode"
         :mode-icon="modeIcon"
         :mode-label="modeLabel"
         :hue="hue"
         :is-dark="isDark"
+        @toggle-nav="emit('toggle-nav')"
         @cycle-theme="emit('cycle-theme')"
         @set-mode="(value) => emit('set-mode', value)"
         @set-hue="(value) => emit('set-hue', value)"

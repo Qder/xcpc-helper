@@ -41,7 +41,7 @@ content/
 
 ## 3. 版本内容与元数据
 
-每个版本包含一份代码文件与一份 `README.md`，可选再放一份自包含的 `visual.html`（大小写不敏感，不写入 front matter，扫描器不把它当代码、也不产生诊断）。README 采用 YAML front matter：
+每个版本包含一份代码文件与一份 `README.md`，可选再放一份自包含的 `visual.html`（大小写不敏感，不写入 front matter，扫描器不把它当代码、也不产生诊断）。`visual.html` 必须放在**该版本目录**里，与代码、README 并排；用 AI 生成时按 [visual-prompt/README.md](visual-prompt/README.md) 拼提示词。README 采用 YAML front matter：
 
 ```plaintext
 ---
@@ -75,7 +75,8 @@ priority: 5
    - 工具栏"新增模板"按钮创建空主标签（仅分类 + 模板名，分类可新）；
    - 所有主标签均可展开，展开区末尾的 + 胶囊新建版本（名称/元数据/代码/说明）；
    - 详情页右上角编辑、删除当前版本；当前版本有 `visual.html` 时显示「可视化」入口，跳到算法可视化演示页；代码与说明均支持上传本地文件或手动输入；
-   - 删光所有版本后，空页面提供"删除模板"按钮移除整个主标签。
+   - 删光所有版本后，空页面提供"删除模板"按钮移除整个主标签；
+   - 列表工具栏「批量删除」进入多选：勾选当前列表中的主标签，确认后物理删除整棵目录树（含全部版本，不可找回）。
 
 **空主标签**：完全为空的模板目录是合法状态（可视化新建的占位模板），
 正常进入列表与详情（无版本字段为空、优先级取默认值 2），不产生诊断；
@@ -86,7 +87,7 @@ priority: 5
 - 名称统一校验（规则见 [../conventions.md](../conventions.md)），中文正常放行；
 - README 由表单数据全量生成：缺省字段不写入 front matter，priority 为默认值 2 时省略；规范外的历史字段在首次编辑保存后丢弃；
 - 新建版本经 .tmp 暂存目录原子就位，更新走临时文件 + 原子替换；删除为物理删除（前端确认弹窗明确提示不可找回）；
-- 删除非空模板被拒绝（409），需先删除其所有版本；删除/移动后空分类目录自动清理；
+- 删除非空模板被拒绝（409），需先删除其所有版本；批量删除走整棵树删除，确认弹窗明确提示不可找回；删除/移动后空分类目录自动清理；
 - 顶层单版本（代码直接在模板目录下）在写 API 的 URL 中用保留字 `~` 寻址；
 - 写操作统一由 `modules/template/writer.py` 落盘；
 - 主标签重命名/换分类暂仅提供后端接口，前端入口后续补。
@@ -104,6 +105,7 @@ priority: 5
 | POST | `/api/templates` | 新建空主标签（仅分类 + 模板名；分类可新） |
 | PUT | `/api/templates/{category}/{name}` | 主标签重命名/换分类 |
 | DELETE | `/api/templates/{category}/{name}` | 删除空主标签（非空 409） |
+| POST | `/api/templates/batch-delete` | 批量删除主标签（请求体 `{ ids: ["分类/模板名", ...] }`；含全部版本；任一不存在则整批拒绝） |
 | POST | `/api/templates/{category}/{name}/versions` | 新建副标签版本 |
 | PUT | `/api/templates/{category}/{name}/versions/{version}` | 更新版本（代码/元数据/正文/改名/换扩展名；`~` 表示顶层单版本） |
 | DELETE | `/api/templates/{category}/{name}/versions/{version}` | 删除版本（`~` 表示顶层单版本；删光后模板留空） |

@@ -81,7 +81,7 @@
 1. 在本仓库的 [Releases](https://github.com/Inkyo-007/xcpc-helper/releases/latest) 页面下载对应平台的最新压缩包；
 2. 解压到任意目录；
 3. 启动：Windows 双击解压目录中的 `start.bat`，Linux/macOS 在解压目录执行 `./start.sh`。首次运行会自动下载 Python 与依赖（需要联网，约几分钟）；
-4. 完成后，按窗口提示，在浏览器访问 <http://127.0.0.1:8000>。
+4. 服务就绪后会自动打开浏览器访问 <http://127.0.0.1:8000>（请保持启动窗口不要关闭）。
 
 ## 🗺️ 开发计划
 
