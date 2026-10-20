@@ -6,10 +6,28 @@
 
 import datetime
 from typing import Literal
+from urllib.parse import urlparse
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 DEFAULT_PRIORITY = 2
+MAX_EXAMPLES = 12
+
+
+def is_http_url(url: str) -> bool:
+    """仅允许带主机名的 http/https 绝对地址。"""
+    try:
+        parsed = urlparse(url.strip())
+    except ValueError:
+        return False
+    return parsed.scheme in ("http", "https") and bool(parsed.netloc)
+
+
+class ExampleLink(BaseModel):
+    """一道例题外链。label 可空，url 必须是 http/https。"""
+
+    label: str = ""
+    url: str
 
 
 class ReadmeMeta(BaseModel):
@@ -23,6 +41,7 @@ class ReadmeMeta(BaseModel):
     tags: list[str] = []
     source: str | None = None
     page: str | None = None
+    examples: list[ExampleLink] = Field(default_factory=list)
     priority: int = DEFAULT_PRIORITY
 
 

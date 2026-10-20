@@ -89,6 +89,8 @@ def test_detail_variants_carry_meta(service: TemplateService) -> None:
     assert second.priority == 3
     assert second.updated == datetime.date(2026, 7, 10)
     assert second.tags == ["连通性"]
+    assert first.examples == []
+    assert second.examples == []
 
 
 def test_detail_not_found(service: TemplateService) -> None:

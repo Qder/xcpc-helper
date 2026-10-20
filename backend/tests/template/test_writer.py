@@ -17,7 +17,7 @@ from main import create_app
 from modules.template import writer
 from modules.template.parser import parse_readme_text
 from modules.template.scanner import VISUAL_HISTORY_DIR, find_visual_file, scan_content
-from modules.template.schemas import VersionMetaInput, VersionUpsert
+from modules.template.schemas import ExampleLink, VersionMetaInput, VersionUpsert
 from services.template.service import TemplateService, get_template_service
 
 
@@ -81,6 +81,9 @@ def test_render_readme_roundtrip() -> None:
         tags=["素数", "数论"],
         source="洛谷 P3383",
         page="https://www.luogu.com.cn/problem/P3383",
+        examples=[
+            ExampleLink(label="CF 26A", url="https://codeforces.com/problemset/problem/26/A")
+        ],
         priority=5,
     )
     text = writer.render_readme(meta, "线性筛说明。\n\n第二段。")
@@ -89,6 +92,9 @@ def test_render_readme_roundtrip() -> None:
     assert parsed.tags == ["素数", "数论"]
     assert parsed.source == "洛谷 P3383"
     assert parsed.page == "https://www.luogu.com.cn/problem/P3383"
+    assert [(e.label, e.url) for e in parsed.examples] == [
+        ("CF 26A", "https://codeforces.com/problemset/problem/26/A"),
+    ]
     assert parsed.priority == 5
     assert body == "线性筛说明。\n\n第二段。"
 
@@ -100,8 +106,10 @@ def test_render_readme_omits_defaults() -> None:
     assert parsed.updated is None
     assert parsed.tags == []
     assert parsed.priority == 2
+    assert parsed.examples == []
     assert body == ""
     assert "priority" not in text
+    assert "examples" not in text
 
 
 # ===== 模板（主标签）操作 =====
@@ -195,6 +203,17 @@ def test_create_version_dir_conflict_and_bad_payload(content_dir: Path) -> None:
             "ds",
             "dsu",
             _payload(meta=VersionMetaInput(page="https://example.com")),  # page 无 source
+        )
+    with pytest.raises(BadRequestError, match="例题链接"):
+        writer.create_version_dir(
+            content_dir,
+            "ds",
+            "dsu",
+            _payload(
+                meta=VersionMetaInput(
+                    examples=[ExampleLink(label="x", url="javascript:alert(1)")]
+                )
+            ),
         )
     with pytest.raises(NotFoundError):
         writer.create_version_dir(content_dir, "ds", "not-exist", _payload())

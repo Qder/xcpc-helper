@@ -14,6 +14,7 @@ from modules.template.scanner import scan_content
 from modules.template.schemas import (
     ROOT_VERSION_TOKEN,
     CategoryInfo,
+    ExampleLink,
     SortMode,
     TemplateBatchDelete,
     TemplateCreate,
@@ -102,6 +103,10 @@ class TemplateService:
                 tags=json.loads(v["tags"]),
                 src=v["source"],
                 page=v["page"],
+                examples=[
+                    ExampleLink.model_validate(item)
+                    for item in json.loads(v["examples"])
+                ],
                 updated=(
                     datetime.date.fromisoformat(v["updated"]) if v["updated"] else None
                 ),

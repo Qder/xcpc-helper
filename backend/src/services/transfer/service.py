@@ -262,6 +262,10 @@ class TransferService:
                 tags=parsed_meta.tags,
                 source=parsed_meta.source,
                 page=parsed_meta.page,
+                examples=[
+                    {"label": item.label, "url": item.url}
+                    for item in parsed_meta.examples
+                ],
                 priority=parsed_meta.priority,
             )
         ext = version.file_name.rsplit(".", 1)[-1]

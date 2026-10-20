@@ -3,7 +3,7 @@
 import datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 SortMode = Literal["updated", "name", "priority"]
 
@@ -31,6 +31,13 @@ class TemplateSummary(BaseModel):
     has_visual: bool = False  # 至少一个版本存在 visual.html
 
 
+class ExampleLink(BaseModel):
+    """一道例题外链。label 可空，url 必须是 http/https。"""
+
+    label: str = ""
+    url: str
+
+
 class TemplateVersion(BaseModel):
     """详情页中的一个版本（副标签）。body 为该版本 README 正文。"""
 
@@ -43,6 +50,7 @@ class TemplateVersion(BaseModel):
     tags: list[str]
     src: str | None
     page: str | None
+    examples: list[ExampleLink] = Field(default_factory=list)
     updated: datetime.date | None
     priority: int
     has_visual: bool = False
@@ -101,6 +109,7 @@ class VersionMetaInput(BaseModel):
     tags: list[str] = []
     source: str | None = None
     page: str | None = None
+    examples: list[ExampleLink] = Field(default_factory=list)
     priority: int = 2
 
 

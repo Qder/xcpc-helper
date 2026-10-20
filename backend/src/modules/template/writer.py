@@ -27,14 +27,19 @@ from core.exceptions import (
     NotFoundError,
     PayloadTooLargeError,
 )
-from modules.template.models import DEFAULT_PRIORITY
+from modules.template.models import DEFAULT_PRIORITY, MAX_EXAMPLES, is_http_url
 from modules.template.scanner import (
     CODE_EXTENSIONS,
     VISUAL_FILENAME,
     VISUAL_HISTORY_DIR,
     find_visual_file,
 )
-from modules.template.schemas import ROOT_VERSION_TOKEN, VersionMetaInput, VersionUpsert
+from modules.template.schemas import (
+    ROOT_VERSION_TOKEN,
+    ExampleLink,
+    VersionMetaInput,
+    VersionUpsert,
+)
 
 # 名称校验规则已提升至 common.validation（打印册功能共用）
 _SNAPSHOT_ID_RE = re.compile(r"^\d{8}-\d{6}Z(?:-\d+)?$")
@@ -72,6 +77,17 @@ def validate_version_payload(payload: VersionUpsert) -> tuple[str, str]:
     """校验版本请求体的业务规则，返回规范化的 (扩展名, 代码文件名)。"""
     if payload.meta.page and not payload.meta.source:
         raise BadRequestError("填写了 page 但未填写 source，链接将不会显示")
+    cleaned: list[ExampleLink] = []
+    for item in payload.meta.examples:
+        url = item.url.strip()
+        if not url:
+            continue
+        if not is_http_url(url):
+            raise BadRequestError(f"例题链接不是 http/https 地址: {item.url!r}")
+        cleaned.append(ExampleLink(label=item.label.strip(), url=url))
+    if len(cleaned) > MAX_EXAMPLES:
+        raise BadRequestError(f"例题最多 {MAX_EXAMPLES} 条")
+    payload.meta.examples = cleaned
     ext = validate_ext(payload.ext)
     filename = (
         validate_code_filename(payload.file, ext) if payload.file else f"code.{ext}"
@@ -95,6 +111,10 @@ def render_readme(meta: VersionMetaInput, body: str) -> str:
         data["source"] = meta.source.strip()
     if meta.page and meta.page.strip():
         data["page"] = meta.page.strip()
+    if meta.examples:
+        data["examples"] = [
+            {"label": item.label, "url": item.url} for item in meta.examples
+        ]
     if meta.priority != DEFAULT_PRIORITY:
         data["priority"] = meta.priority
 

@@ -52,6 +52,7 @@ CREATE TABLE versions (
     tags TEXT NOT NULL,
     source TEXT,
     page TEXT,
+    examples TEXT NOT NULL,
     priority INTEGER NOT NULL,
     updated TEXT,
     has_visual INTEGER NOT NULL
@@ -132,7 +133,7 @@ def rebuild_index(db_path: Path, scan: ScanResult) -> None:
                     f"{template.id}/{version.slug}" if version.slug else template.id
                 )
                 conn.execute(
-                    "INSERT INTO versions VALUES (" + ",".join("?" * 15) + ")",
+                    "INSERT INTO versions VALUES (" + ",".join("?" * 16) + ")",
                     (
                         version_id,
                         template.id,
@@ -146,6 +147,10 @@ def rebuild_index(db_path: Path, scan: ScanResult) -> None:
                         json.dumps(version.meta.tags, ensure_ascii=False),
                         version.meta.source,
                         version.meta.page,
+                        json.dumps(
+                            [e.model_dump() for e in version.meta.examples],
+                            ensure_ascii=False,
+                        ),
                         version.meta.priority,
                         version.meta.updated.isoformat() if version.meta.updated else None,
                         int(version.has_visual),

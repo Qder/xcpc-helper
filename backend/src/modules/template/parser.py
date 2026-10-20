@@ -11,7 +11,12 @@ from typing import Any
 import yaml
 from pydantic import ValidationError
 
-from modules.template.models import Diagnostic, ReadmeMeta
+from modules.template.models import (
+    MAX_EXAMPLES,
+    Diagnostic,
+    ReadmeMeta,
+    is_http_url,
+)
 
 _FRONT_MATTER_RE = re.compile(
     r"\A---[ \t]*\r?\n(.*?)\r?\n---[ \t]*\r?\n?(.*)\Z",
@@ -34,6 +39,8 @@ def _coerce_meta(data: dict[str, Any], path: str, diags: list[Diagnostic]) -> Re
     priority = normalized.get("priority")
     if isinstance(priority, str) and priority.strip().isdigit():
         normalized["priority"] = int(priority.strip())
+
+    normalized["examples"] = _coerce_examples(normalized.get("examples"), path, diags)
 
     # updated 允许日期以外的字符串，尝试按 ISO 格式解析
     updated = normalized.get("updated")
@@ -61,6 +68,48 @@ def _coerce_meta(data: dict[str, Any], path: str, diags: list[Diagnostic]) -> Re
             Diagnostic(level="warning", path=path, message="填写了 page 但未填写 source，链接将不会显示")
         )
     return meta
+
+
+def _coerce_examples(
+    raw: Any, path: str, diags: list[Diagnostic]
+) -> list[dict[str, str]]:
+    """把 examples 规范成 [{label, url}, ...]；非法项丢弃并 warning。"""
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        diags.append(
+            Diagnostic(level="warning", path=path, message="examples 不是列表，已忽略")
+        )
+        return []
+    kept: list[dict[str, str]] = []
+    dropped = 0
+    for item in raw:
+        if len(kept) >= MAX_EXAMPLES:
+            dropped += 1
+            continue
+        if not isinstance(item, dict):
+            dropped += 1
+            continue
+        url = item.get("url")
+        if not isinstance(url, str) or not is_http_url(url):
+            dropped += 1
+            continue
+        label = item.get("label")
+        kept.append(
+            {
+                "label": label.strip() if isinstance(label, str) else "",
+                "url": url.strip(),
+            }
+        )
+    if dropped:
+        diags.append(
+            Diagnostic(
+                level="warning",
+                path=path,
+                message=f"examples 中有 {dropped} 项无效或超出 {MAX_EXAMPLES} 条上限，已丢弃",
+            )
+        )
+    return kept
 
 
 def parse_readme_text(text: str, path: str, diags: list[Diagnostic]) -> tuple[ReadmeMeta, str]:

@@ -37,6 +37,7 @@ def test_parse_defaults_and_optional_fields() -> None:
     assert meta.priority == 2  # 默认优先级
     assert meta.tags == []
     assert meta.updated is None
+    assert meta.examples == []
     assert body == ""
     assert diags == []
 
@@ -46,6 +47,50 @@ def test_unknown_fields_tolerated() -> None:
     meta, _, diags = _parse("---\ntags: [a]\nfuture_field: 'x'\n---\n")
     assert meta.tags == ["a"]
     assert diags == []
+
+
+def test_parse_examples() -> None:
+    text = (
+        "---\n"
+        "examples:\n"
+        "  - label: CF 26A\n"
+        "    url: https://codeforces.com/problemset/problem/26/A\n"
+        "  - url: https://www.luogu.com.cn/problem/P3383\n"
+        "---\n"
+    )
+    meta, _, diags = _parse(text)
+    assert [(e.label, e.url) for e in meta.examples] == [
+        ("CF 26A", "https://codeforces.com/problemset/problem/26/A"),
+        ("", "https://www.luogu.com.cn/problem/P3383"),
+    ]
+    assert diags == []
+
+
+def test_examples_invalid_items_dropped() -> None:
+    text = (
+        "---\n"
+        "examples:\n"
+        "  - label: ok\n"
+        "    url: https://example.com/a\n"
+        "  - label: no-url\n"
+        "  - url: javascript:alert(1)\n"
+        "  - just-a-string\n"
+        "---\n"
+    )
+    meta, _, diags = _parse(text)
+    assert [(e.label, e.url) for e in meta.examples] == [
+        ("ok", "https://example.com/a"),
+    ]
+    assert any("examples" in d.message for d in diags)
+
+
+def test_examples_over_limit_truncated() -> None:
+    items = "\n".join(
+        f"  - url: https://example.com/{i}" for i in range(14)
+    )
+    meta, _, diags = _parse(f"---\nexamples:\n{items}\n---\n")
+    assert len(meta.examples) == 12
+    assert any("12" in d.message for d in diags)
 
 
 def test_page_without_source_warns() -> None:

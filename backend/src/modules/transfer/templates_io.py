@@ -60,6 +60,10 @@ def build_templates_archive(templates: list[TemplateNode]) -> bytes:
                 tags=version.meta.tags,
                 source=version.meta.source,
                 page=version.meta.page,
+                examples=[
+                    {"label": item.label, "url": item.url}
+                    for item in version.meta.examples
+                ],
                 priority=version.meta.priority,
             )
             readme = render_readme(meta, version.body)
