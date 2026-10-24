@@ -97,8 +97,8 @@ export interface RefineStatus {
 
 /* ---------- 错题本（review，见 docs/design/activity/review.md） ---------- */
 
-/** 错题状态：未通过（从未 AC）/ 挣扎题（首次 AC 前失败达阈值） */
-export type ReviewStatus = 'unsolved' | 'struggled'
+/** 错题状态：未通过（从未 AC）/ 挣扎题（首次 AC 前失败达阈值）/ 收录（手动加入） */
+export type ReviewStatus = 'unsolved' | 'struggled' | 'collected'
 
 /** 错题状态筛选（all 为不筛选） */
 export type ReviewFilter = 'all' | ReviewStatus
@@ -111,12 +111,14 @@ export interface ReviewItem {
   /** 平台原始难度值（不跨平台归一） */
   difficulty: number | string | null
   status: ReviewStatus
-  /** 首次 AC 之前的失败次数（未通过为全部失败数） */
+  /** 首次 AC 之前的失败次数（未通过为全部失败数；收录恒 0） */
   failCount: number
-  /** 最近一次尝试（本地时区） */
+  /** 最近一次尝试（本地时区；收录为加入时间） */
   lastAttemptAt: string
   /** 该平台是否具备题单能力（决定展开箭头是否出现） */
   canRecommend: boolean
+  /** 手动收录（前端据此显示删除按钮） */
+  manual?: boolean
 }
 
 export interface ReviewData {
@@ -143,4 +145,42 @@ export interface RecommendData {
   stale: boolean
   /** 空结果原因：not_indexed = 源题不在平台题库；no_match = 没有相近题 */
   reason: 'not_indexed' | 'no_match' | null
+}
+
+/** 收录结果：created=false 表示幂等命中已有条目（不是错误） */
+export interface ManualReviewResult {
+  item: ReviewItem
+  created: boolean
+}
+
+/** 算法标签（按算法查找的筛选项） */
+export interface ProblemTag {
+  /** 平台标签主键（CF 用标签文本当 id） */
+  id: string
+  name: string
+  /** 分组（牛客 groupName / 洛谷父标签），可空 */
+  group: string
+  /** 该标签下题目数（平台提供时才有） */
+  count: number | null
+}
+
+/** 按算法搜题结果的一行：solved / collected 由后端用本地数据算出 */
+export interface SearchProblem {
+  problemKey: string
+  name: string
+  /** 平台原始难度值（CF 为分值，牛客/洛谷为档位） */
+  rating: number | null
+  tags: string[]
+  url: string
+  /** 提交里已 AC */
+  solved: boolean
+  /** 已在手动收录清单里 */
+  collected: boolean
+}
+
+export interface SearchProblemsData {
+  items: SearchProblem[]
+  page: number
+  /** 是否还有下一页（按「本页是否满」判断） */
+  hasMore: boolean
 }

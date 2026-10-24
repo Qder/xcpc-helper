@@ -5,13 +5,14 @@
  * 具备题单能力的平台可展开"同类推荐"：首次展开才请求，结果按题缓存，收起不丢。 */
 
 import { computed, reactive } from 'vue'
-import { ChevronDown, ExternalLink, Inbox } from 'lucide-vue-next'
-import { NButton, NPagination, NSpin, NTag } from 'naive-ui'
+import { ChevronDown, ExternalLink, Inbox, Trash2 } from 'lucide-vue-next'
+import { NButton, NPagination, NPopconfirm, NSpin, NTag } from 'naive-ui'
 import {
   difficultyLabel,
   failLabel,
   relativeDay,
   statusLabel,
+  statusTagType,
 } from '@/features/activity/model/review'
 import { pageCount, paged } from '@/features/activity/model/pagination'
 import { fetchReviewRecommend } from '@/features/activity/api'
@@ -31,6 +32,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   'empty-action': []
   'update:page': [page: number]
+  /** 删除手动收录项（父级调接口并本地移除） */
+  remove: [item: ReviewItem]
 }>()
 
 const { platformName } = useActivity()
@@ -133,15 +136,19 @@ function emptyText(state: RecommendState | undefined): string {
         </a>
         <span class="row-platform">{{ platformName(item.platform) }}</span>
         <span class="row-difficulty">{{ difficultyLabel(item.difficulty) }}</span>
-        <NTag
-          size="small"
-          :bordered="false"
-          :type="item.status === 'unsolved' ? 'error' : 'warning'"
-        >
+        <NTag size="small" :bordered="false" :type="statusTagType(item.status)">
           {{ statusLabel(item.status) }}
         </NTag>
         <span class="row-fails">{{ failLabel(item) }}</span>
         <span class="row-time">{{ relativeDay(item.lastAttemptAt) }}</span>
+        <NPopconfirm v-if="item.manual" @positive-click="emit('remove', item)">
+          <template #trigger>
+            <NButton class="row-delete" size="tiny" quaternary aria-label="删除收录">
+              <Trash2 :size="13" />
+            </NButton>
+          </template>
+          从错题本移除这道收录题？
+        </NPopconfirm>
         <NButton
           v-if="item.canRecommend"
           class="row-toggle"
@@ -308,6 +315,15 @@ function emptyText(state: RecommendState | undefined): string {
   align-items: center;
   gap: 2px;
   font-size: 12px;
+}
+
+.row-delete {
+  flex: none;
+  color: var(--muted);
+}
+
+.row-delete:hover {
+  color: #c63b57;
 }
 
 .toggle-icon {

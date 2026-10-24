@@ -5,13 +5,16 @@ import type {
   AccountCredentials,
   BoundAccount,
   DayActivity,
+  ManualReviewResult,
   OverviewTotals,
   PlatformId,
   PlatformMeta,
+  ProblemTag,
   RecommendData,
   RefineStatus,
   ReviewData,
   ReviewFilter,
+  SearchProblemsData,
   SubmissionEntry,
 } from '@/features/activity/types'
 import type { PlatformScope } from '@/features/activity/store'
@@ -171,6 +174,43 @@ export function fetchReviewRecommend(
 ): Promise<RecommendData> {
   const params = new URLSearchParams({ platform, problemKey })
   return request<RecommendData>(`/activity/review/recommend?${params.toString()}`)
+}
+
+/** 收录一题：传链接（后端解析平台与题号），或直接传平台 + 题号 */
+export function addReviewManual(input: {
+  url?: string
+  platform?: string
+  problemKey?: string
+}): Promise<ManualReviewResult> {
+  return request<ManualReviewResult>('/activity/review/manual', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+}
+
+/** 删除手动收录项（只作用于手动清单，不影响提交聚合出的记录） */
+export function removeReviewManual(platform: string, problemKey: string): Promise<void> {
+  const params = new URLSearchParams({ platform, problemKey })
+  return request<void>(`/activity/review/manual?${params.toString()}`, {
+    method: 'DELETE',
+  })
+}
+
+/** 算法标签目录（按算法查找的筛选项） */
+export function fetchReviewTags(platform: string): Promise<{ items: ProblemTag[] }> {
+  const params = new URLSearchParams({ platform })
+  return request<{ items: ProblemTag[] }>(`/activity/review/tags?${params.toString()}`)
+}
+
+/** 按标签浏览题库一页（每页 50；solved / collected 由后端标注） */
+export function searchReviewProblems(
+  platform: string,
+  tag: string,
+  page = 1,
+): Promise<SearchProblemsData> {
+  const params = new URLSearchParams({ platform, tag, page: String(page) })
+  return request<SearchProblemsData>(`/activity/review/search?${params.toString()}`)
 }
 
 /* ---------- 精细化同步（REFINE_VERDICT 能力平台） ---------- */

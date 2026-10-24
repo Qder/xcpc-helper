@@ -5,7 +5,11 @@ import {
   matchesPlatform,
   matchesStatus,
   relativeDay,
+  removeReviewItem,
   statusLabel,
+  statusTagType,
+  supportsTagSearch,
+  upsertReviewItem,
 } from '@/features/activity/model/review'
 import type { ReviewItem } from '@/features/activity/types'
 
@@ -25,9 +29,18 @@ function item(overrides: Partial<ReviewItem> = {}): ReviewItem {
 }
 
 describe('statusLabel', () => {
-  it('区分未通过与挣扎题', () => {
+  it('区分未通过、挣扎题与收录', () => {
     expect(statusLabel('unsolved')).toBe('未通过')
     expect(statusLabel('struggled')).toBe('挣扎题')
+    expect(statusLabel('collected')).toBe('收录')
+  })
+})
+
+describe('statusTagType', () => {
+  it('三种状态配色各不相同', () => {
+    expect(statusTagType('unsolved')).toBe('error')
+    expect(statusTagType('struggled')).toBe('warning')
+    expect(statusTagType('collected')).toBe('info')
   })
 })
 
@@ -35,6 +48,58 @@ describe('failLabel', () => {
   it('展示失败次数', () => {
     expect(failLabel(item({ failCount: 4 }))).toBe('失败 4 次')
     expect(failLabel(item({ failCount: 1 }))).toBe('失败 1 次')
+  })
+
+  it('收录项没有提交数据，不展示次数', () => {
+    expect(failLabel(item({ status: 'collected', failCount: 0 }))).toBe('')
+  })
+})
+
+describe('supportsTagSearch', () => {
+  it('problemset 或 problem_lookup 任一即可（与后端能力分支一致）', () => {
+    expect(supportsTagSearch(['problemset'])).toBe(true)
+    expect(supportsTagSearch(['problem_lookup'])).toBe(true)
+    expect(supportsTagSearch(['sync', 'refine_verdict'])).toBe(false)
+    expect(supportsTagSearch([])).toBe(false)
+  })
+})
+
+describe('upsertReviewItem', () => {
+  it('新条目按最近时间倒序插入', () => {
+    const old = item({ problemKey: '1A', lastAttemptAt: '2026-10-01T10:00:00+08:00' })
+    const added = item({
+      problemKey: '2B',
+      status: 'collected',
+      lastAttemptAt: '2026-10-20T10:00:00+08:00',
+    })
+    expect(upsertReviewItem([old], added).map((i) => i.problemKey)).toEqual(['2B', '1A'])
+  })
+
+  it('同 (platform, key) 原位替换而不是重复插入', () => {
+    const before = item({ problemName: '旧题名' })
+    const after = item({ problemName: '新题名' })
+    const merged = upsertReviewItem([before], after)
+    expect(merged).toHaveLength(1)
+    expect(merged[0].problemName).toBe('新题名')
+  })
+
+  it('不同平台的同号题互不影响', () => {
+    const cf = item({ platform: 'codeforces', problemKey: 'P1001' })
+    const lg = item({ platform: 'luogu', problemKey: 'P1001' })
+    expect(upsertReviewItem([cf], lg)).toHaveLength(2)
+  })
+})
+
+describe('removeReviewItem', () => {
+  it('按平台 + 题号精确删除', () => {
+    const cf = item({ platform: 'codeforces', problemKey: 'P1001' })
+    const lg = item({ platform: 'luogu', problemKey: 'P1001' })
+    expect(removeReviewItem([cf, lg], 'luogu', 'P1001')).toEqual([cf])
+  })
+
+  it('条目不存在时原样返回', () => {
+    const list = [item()]
+    expect(removeReviewItem(list, 'luogu', 'P4779')).toEqual(list)
   })
 })
 
