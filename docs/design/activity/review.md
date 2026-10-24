@@ -219,12 +219,20 @@ backend/data/cache/activity/problemset/<platform>.json
 | 平台 | 识别的链接形态 | `problem_key` |
 | --- | --- | --- |
 | Codeforces | `/contest/{id}/problem/{idx}`、`/gym/{id}/problem/{idx}`、`/problemset/problem/{id}/{idx}`（group 内链接含前一段，一并命中） | `{id}{idx}`（如 `2245F`，与提交归一化同口径） |
-| 牛客竞赛 | `/acm/problem/{id}`、`/acm/contest/{cid}/problem/{id}` | `{id}`（纯数字，**不用** `showId` 的 `NC` 前缀） |
+| 牛客竞赛 | `/acm/problem/{id}`、`/acm/contest/{cid}/problem/{id}`；另含题霸链接 `/practice/{uuid}`（需抓页面，见下） | `{id}`（纯数字，**不用** `showId` 的 `NC` 前缀） |
 | 洛谷 | `/problem/{pid}`（忽略 `?contestId=`；`/problem/list` 等保留字不认） | `{pid}`（前缀字母大写归一，如 `P1001`、`CF1A`、`AT_abc123_a`） |
 
 约束：
 
-- 只做**字符串解析**，不发请求、不查库，因此可完全单测；
+- 优先只做**字符串解析**，不发请求、不查库，因此可完全单测；
+- **例外：牛客题霸链接**（`nowcoder.com/practice/{32位uuid}`，如从「题霸/在线编程」
+  或题单页拿到的链接）里根本没有题号，只有内部 uuid。这类链接由
+  `resolve_problem_url(url)`（基类默认退回 `parse_problem_url`）抓一次页面，
+  从内嵌的 `window.pageInfo` 里取 `problemId`——它是**题库题号**，与
+  `/acm/problem/list/json` 的 `problemId`、提交页的 `problem_id` 同口径；
+  `questionId` / `questionID_var` 是题霸内部 id，**不能用**。service 的解析分两轮：
+  先跑全部平台的字符串解析（零请求），都没命中才让平台尝试 `resolve_problem_url`；
+  页面抓取失败时返回 `None`，不把网络错误抛给用户，最终仍是「无法识别该链接」；
 - 解析出的 key 必须与同步归一化的 `problem_key` 完全一致，否则「收录后 AC 了
   却仍显示」——这是合并规则的最大风险点，故每个平台都要有对应单测；
 - 域名只认官方域（`codeforces.com`、`www.nowcoder.com`、`www.luogu.com.cn`），
@@ -409,6 +417,9 @@ key = (-共同标签数, 难度差绝对值, problem_key)   # 升序取前 5
   已进 `PlatformAdapter` 基类；CF 用题单缓存汇总标签与本地过滤分页，牛客走
   `knowledge/catalog` + `problem/list/json`，洛谷走 `/_lfe/tags` + `/problem/list`。
   洛谷父标签名带 BOM（`\ufeff基础算法`），`list_problem_tags()` 已 trim 后再返回。
+- 链接解析：基类新增 `resolve_problem_url()`（默认退回纯字符串解析）；牛客覆盖它
+  处理题霸 `/practice/{uuid}` 链接——抓页面取 `window.pageInfo.problemId` 后
+  再按题库题号收录，实测 `小月的订单`（uuid `23d4c8aa…`）→ `325082` / 1600。
 - 接口：`POST` / `DELETE /api/activity/review/manual`、`GET /api/activity/review/tags`、
   `GET /api/activity/review/search` 已上线（`/search` 每页 50，`hasMore` 按本页是否
   满判定，不依赖平台总数）。
