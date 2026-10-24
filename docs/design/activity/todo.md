@@ -1,6 +1,6 @@
 # 待办题目（todo）设计
 
-> 状态：设计中。完成后请更新 [README.md](../README.md) 索引中的状态。
+> 状态：已实现。索引状态见 [README.md](../README.md)。
 > 公共约定见 [conventions.md](conventions.md)；错题本见 [review.md](review.md)；
 > 需求优先级见 [../../requirements.md](../../requirements.md)。
 
@@ -156,6 +156,8 @@ backend/data/user/<组>/activity/review-todo.json
 ```
 
 - 平台页签复用 `PlatformTabs.vue`，含「全部平台」；
+- **切平台时清空标签筛选**：花片是按当前平台集合算的，保留旧标签会变成看不见的
+  隐形过滤（页面上没有对应花片可点掉）；
 - 标签花片一行横向排列：`[全部]` + 每个标签带计数；点一个即精确筛选，
   再点一次或点 `[全部]` 取消；
 - 行内：题号 + 题名（新标签打开原题）+ 平台 + 难度（原始口径）+ 状态标签
@@ -205,11 +207,13 @@ backend/data/user/<组>/activity/review-todo.json
 | --- | --- |
 | `frontend/src/features/activity/types.ts` | `TodoItem` / `TodoData` / `TodoTag`；`ReviewItem.inTodo` |
 | `frontend/src/features/activity/api.ts` | `fetchTodo()` / `addTodo()` / `removeTodo()` |
+| `frontend/src/features/activity/model/todo.ts` | 纯函数：`canAddToTodo` / `showsTodoAction` / `matchesTag` / `tagChipLabel` / `isActiveTag` / `toggleTag` / `removeTodoItem` / `markInTodo`（含单测） |
 | `frontend/src/features/activity/TodoPage.vue` | 页面：平台页签 + 标签花片 + 列表 + 空态 |
 | `frontend/src/features/activity/components/ReviewList.vue` | 未通过 / 收录行内「待办 / 已待办」按钮 |
 | `frontend/src/app/nav.ts` / `router.ts` | 新增子页与路由 `/activity/todo` |
 
-不引入新依赖；花片用 `NTag`（`checkable`），列表沿用错题本行样式与相对时间格式化。
+不引入新依赖；花片用原生 `button` + `aria-pressed`（计数与激活态样式自绘，
+避免 `NTag` 的 checkable 在无标签页面上表现不一致），列表沿用错题本行样式与相对时间格式化。
 
 ## 6. 验证方式
 
@@ -219,6 +223,7 @@ backend/data/user/<组>/activity/review-todo.json
   `uv run ruff check src tests`。
 - 前端：`npm run typecheck`、`npm run test`、`npm run build`。
 - 手动走查：错题本里把一道未通过题加入待办 → 待办页出现该题 → 标签花片出现该题
-  的标签 → 点花片只留匹配项 → 点「全部」复原 → 「移出」后刷新不复现 → 把该题
-  在提交里变 AC 后（或 mock AC 集合）刷新，列表不再显示但文件仍在 →
-  同一题重复加入不产生两条 → 错题本行内按钮显示「已待办」。
+  的标签 → 点花片只留匹配项 → 点「全部」复原 → 切到某平台页签时花片与筛选一起
+  换成该平台（旧标签不残留）→「移出」后刷新不复现 → 把该题在提交里变 AC 后
+  （或 mock AC 集合）刷新，列表不再显示但文件仍在 → 同一题重复加入不产生两条 →
+  错题本行内按钮显示「已待办」，移出后恢复为「待办」。

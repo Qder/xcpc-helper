@@ -19,7 +19,7 @@
 | [activity/vjudge.md](activity/vjudge.md) | activity · VJudge 适配（匿名模式，/status/data） | 已实现 |
 | [activity/qoj.md](activity/qoj.md) | activity · QOJ 适配（Cookie 授权 + HTML 解析 + 子任务评分） | 已实现 |
 | [activity/review.md](activity/review.md) | activity · 错题本与同类推荐 | 已实现 |
-| [activity/todo.md](activity/todo.md) | activity · 待办题目（精选清单 + 标签筛选） | 设计中 |
+| [activity/todo.md](activity/todo.md) | activity · 待办题目（精选清单 + 标签筛选） | 已实现 |
 
 ## 状态约定
 
