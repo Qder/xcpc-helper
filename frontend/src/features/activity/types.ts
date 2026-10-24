@@ -141,4 +141,6 @@ export interface RecommendData {
   items: RecommendItem[]
   /** true = 本次用的是过期缓存（刷新失败后的降级） */
   stale: boolean
+  /** 空结果原因：not_indexed = 源题不在平台题库；no_match = 没有相近题 */
+  reason: 'not_indexed' | 'no_match' | null
 }

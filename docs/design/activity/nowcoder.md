@@ -40,6 +40,20 @@
 
 **难度**：牛客页面无难度字段，`difficulty` 统一置 `None`。
 
+**题库查询（`PROBLEM_LOOKUP`，错题本同类推荐用）**：题库列表页为服务端渲染 HTML，
+`GET /acm/problem/list` 支持服务端过滤，故不做全量抓取（约 298 页）：
+
+- 源题画像：`?keyword=<题号>` 精确查询，返回单条（含知识点标签与难度）；
+- 同类候选：`?tagId=<标签主键>&minDifficulty=&maxDifficulty=`，只取一页；
+- **标签过滤只认主键 `data-id`**：`tagName` / `tag` / `keyword=哈希` 都不生效，
+  故 `ProblemMeta.tag_ids` 保存主键；
+- 多个 `tagId` 逗号分隔为 **OR** 语义（实测：单标签 50/50 命中，双标签并集）；
+- 题库页 `pageSize=200` 返回空表，必须用 50（与提交页的重复页 bug 是两回事）；
+- 难度列可为空（旧题未定级）→ `rating=None`；
+- 行结构以 `data-problemId` 标识，解析正则与提交页分开（两页表格结构不同）；
+- 比赛专属题不进公开题库：`fetch_problem` 返回 `None`，service 归因为
+  `not_indexed`（前端提示"不在公开题库"，区别于"没有相近题"）。
+
 **限流**：`min_interval = 1.0`，使用共享 `HttpFetcher`（无 WAF 指纹挑战）。
 
 ## 陷阱备忘
@@ -47,4 +61,6 @@
 - **pageSize=200 有服务器 bug**：第 3 页起返回与第 2 页相同数据，必须用 pageSize=50；
 - **时间戳为中国时区**：直接当 UTC 会差 8 小时，必须显式转换；
 - **rating-history 验证不返回用户名**：`display_name` 只能留空；
-- **HTML 结构变更风险**：牛客为商业平台，页面结构可能调整，测试 fixture 可快速发现。
+- **HTML 结构变更风险**：牛客为商业平台，页面结构可能调整，测试 fixture 可快速发现；
+- **题库列表页与提交页表格结构不同**：题库行用 `data-problemId` 标识，标签是
+  `class="tag-label"` 且带 `data-id`；解析正则分开维护，不要复用提交页那套。

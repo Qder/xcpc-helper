@@ -1,6 +1,6 @@
 # 错题本与同类推荐（review）设计
 
-> 状态：已实现（第一期：Codeforces 推荐）。完成后请更新 [README.md](../README.md) 索引中的状态。
+> 状态：已实现（第一期：Codeforces 全量题单；第二期：牛客竞赛定点查询）。完成后请更新 [README.md](../README.md) 索引中的状态。
 > 公共约定见 [conventions.md](conventions.md)；需求优先级见 [../../requirements.md](../../requirements.md)。
 
 ## 1. 背景与目标
@@ -14,8 +14,9 @@
 - 事实来源仍是 `data/user/<userid>/activity/submissions/*.jsonl`，不新增采集、
   不改提交结构；
 - 只读聚合，不做写操作，因此不涉及原子写与并发写约定；
-- 「同类推荐」第一期只做 Codeforces（唯一能一次拿到全站题目标签与分值的平台），
-  其他平台只列错题、不展示推荐入口。
+- 「同类推荐」目前支持 Codeforces（全量题单）与牛客竞赛（题库定点查询）；
+  其余平台只列错题、不展示推荐入口——是否支持由 adapter 是否声明
+  `PROBLEMSET` / `PROBLEM_LOOKUP` 决定，前端不硬编码平台清单。
 
 ## 2. 总体形态
 
@@ -39,8 +40,11 @@
 - **不改提交模型**。标签、rating 区间属于「题库」数据，与「我交过什么」正交；
   塞进 `Submission` 会让每行 jsonl 冗余膨胀，且平台标签会随时间变化。推荐所需的
   题目画像走独立缓存。
-- **题单缓存为可选能力，不阻断错题本**。没有 `PROBLEMSET` 能力的平台、
-  缓存拉取失败、离线启动，错题列表都照常工作，推荐区显示不可用。
+- **题单缓存为可选能力，不阻断错题本**。没有 `PROBLEMSET` / `PROBLEM_LOOKUP`
+  能力的平台、缓存拉取失败、离线启动，错题列表都照常工作，推荐区显示不可用。
+- **推荐只在平台内进行，不跨平台互推**。各平台标签体系互不相同（CF 的
+  `dp` / `graphs` 对牛客的「线性dp」/「图论」，语义与粒度都对不齐），拿 A 平台
+  错题去推 B 平台题目会大幅误推，故 `recommend()` 只在同一 `platform` 内取候选。
 - **懒加载推荐**。展开某行时才请求推荐，不随列表一次算全站——列表是毫秒级的
   本地读取，推荐要读题单缓存（数千条）。
 
@@ -72,7 +76,13 @@ ProblemRecord        # 单个题目在全部提交中的汇总（review.py 输�
 
 排序：`last_attempt_at` 倒序（最近翻车的排前面），同时间按 `problem_key` 升序稳定。
 
-### 3.2 题单缓存（推荐用，可删除重建）
+### 3.2 推荐的两种取数方式
+
+平台能力不同，取数方式也不同；打分（`review.recommend_problems`）与前端共用。
+
+**A. 全量题单缓存（`Capability.PROBLEMSET`，Codeforces）**
+
+一次拉全站题单（含标签与难度），落盘缓存后按源题在缓存里打分。
 
 ```
 backend/data/cache/activity/problemset/<platform>.json
@@ -83,8 +93,7 @@ backend/data/cache/activity/problemset/<platform>.json
   "fetchedAt": 1761200000,
   "items": [
     { "problem_key": "2245A", "name": "X Axis", "rating": 800,
-      "tags": ["math", "sortings"],
-      "url": "https://codeforces.com/contest/2245/problem/A" }
+      "tags": ["math", "sortings"], "url": "https://codeforces.com/contest/2245/problem/A" }
   ]
 }
 ```
@@ -98,9 +107,29 @@ backend/data/cache/activity/problemset/<platform>.json
 - 原子写入沿用 `modules/activity/store.py` 的临时文件 + `os.replace` 模式；
 - 单条记录损坏只跳过该条，不整体丢弃缓存。
 
+**B. 定点查询（`Capability.PROBLEM_LOOKUP`，牛客竞赛）**
+
+牛客题库约 298 页（pageSize=50），全量抓取按 1s 限流需约 5 分钟且收益低，
+因此不做全量缓存，改为每次展开时两次请求（不落盘、无需 TTL）：
+
+1. `fetch_problem(problem_key)`：题库列表页 `?keyword=<题号>` 精确查源题画像；
+2. `find_similar_problems(target)`：`?tagId=<标签主键>&minDifficulty=&maxDifficulty=`
+   取同标签、难度相近的候选（服务端过滤，候选量与请求量都小）。
+
+关键约束（实测确认）：
+
+- 牛客的标签过滤**只认主键 `data-id`**，标签文本（`tagName` / `tag`）不生效，
+  故 `ProblemMeta` 增加 `tag_ids` 字段保存主键；
+- 多个 `tagId` 以逗号分隔是 **OR** 语义，候选取并集后由共享打分按标签交集排序；
+- 题库页 `pageSize=200` 返回空表（与提交页的重复页 bug 不同），必须用 50；
+- 难度列可能为空（旧题未定级）→ `rating=None`，打分退回只按标签匹配。
+
+代价：比赛专属题不进公开题库，此类错题的推荐必然为空——因此接口用
+`reason` 区分两种空结果（见 §5 API），前端给出不同提示，而不是笼统说"没找到"。
+
 ### 3.3 不变量
 
-- 推荐候选**永远排除**用户已 AC 的题（按当前用户组合并全部绑定的 CF 账号），
+- 推荐候选**永远排除**用户已 AC 的题（按当前用户组合并全部绑定账号），
   也排除源题本身；
 - 推荐结果不落盘、不记录「跳过/已看」，第一期无状态；
 - 没有任何提交时返回空列表，不报错。
@@ -135,10 +164,11 @@ backend/data/cache/activity/problemset/<platform>.json
 | `backend/src/modules/activity/review.py` | 纯函数：提交 → `ProblemRecord` 列表；推荐排序打分。无 IO，可单测 |
 | `backend/src/modules/activity/problemset.py` | 题单缓存的读写与 TTL（唯一写 `data/cache/` 的模块） |
 | `backend/src/modules/activity/schemas.py` | 新增 `ReviewItemOut` / `ReviewOut` / `RecommendItemOut` / `RecommendOut` |
-| `backend/src/services/activity/service.py` | `review_list()` / `recommend()`：取提交、调纯函数、按能力分支 |
-| `backend/src/adapters/base.py` | 新增 `Capability.PROBLEMSET`、`ProblemMeta`、`fetch_problemset()`（基类默认抛 `CapabilityNotSupportedError`） |
+| `backend/src/services/activity/service.py` | `review_list()` / `recommend()`：取提交、调纯函数、按能力分支（题单缓存 / 定点查询） |
+| `backend/src/adapters/base.py` | 新增 `Capability.PROBLEMSET` / `Capability.PROBLEM_LOOKUP`、`ProblemMeta`（含 `tag_ids`）、`fetch_problemset()` / `fetch_problem()` / `find_similar_problems()`（基类默认抛 `CapabilityNotSupportedError`） |
 | `backend/src/adapters/codeforces/api_models.py` | `CfProblemsetResult`（`result` 是对象不是列表，不能复用 `CfEnvelope[list]`） |
 | `backend/src/adapters/codeforces/__init__.py` | 声明 `PROBLEMSET` 并实现 `fetch_problemset()` |
+| `backend/src/adapters/nowcoder/__init__.py` | 声明 `PROBLEM_LOOKUP` 并实现 `fetch_problem()` / `find_similar_problems()`（题库列表页 HTML 正则解析） |
 
 依赖方向不变：`review.py` / `problemset.py` 不 import adapters、不碰 router。
 
@@ -157,7 +187,7 @@ key = (-共同标签数, 难度差绝对值, problem_key)   # 升序取前 5
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | `GET` | `/api/activity/review?platform=&status=` | 错题列表；`status` 取 `all`（默认）/ `unsolved` / `struggled`；`platform` 缺省为全部 |
-| `GET` | `/api/activity/review/recommend?platform=&problemKey=` | 同类推荐 5 条；平台无 `PROBLEMSET` 能力返回 400，题单未命中源题返回空列表 |
+| `GET` | `/api/activity/review/recommend?platform=&problemKey=` | 同类推荐 5 条；平台无 `PROBLEMSET` / `PROBLEM_LOOKUP` 任一能力返回 400。空结果时 `reason` 区分 `not_indexed`（源题不在平台题库，如牛客比赛专属题）与 `no_match`（有收录但没有相近题）；`stale=true` 表示平台查询失败或题单缓存已过期 |
 
 两个接口都作用于当前用户组，不新增用户组参数。
 

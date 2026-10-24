@@ -48,6 +48,7 @@ interface RecommendState {
   error: string | null
   items: RecommendItem[]
   stale: boolean
+  reason: 'not_indexed' | 'no_match' | null
 }
 
 const panels = reactive<Record<string, RecommendState>>({})
@@ -71,7 +72,7 @@ function toggle(item: ReviewItem): void {
 }
 
 async function load(key: string, item: ReviewItem): Promise<void> {
-  panels[key] = { loading: true, error: null, items: [], stale: false }
+  panels[key] = { loading: true, error: null, items: [], stale: false, reason: null }
   try {
     const res = await fetchReviewRecommend(item.platform, item.problemKey)
     panels[key] = {
@@ -79,6 +80,7 @@ async function load(key: string, item: ReviewItem): Promise<void> {
       error: null,
       items: res.items,
       stale: res.stale,
+      reason: res.reason ?? null,
     }
   } catch (e) {
     // 推荐失败不影响错题列表本身：面板内就地提示
@@ -87,8 +89,17 @@ async function load(key: string, item: ReviewItem): Promise<void> {
       error: e instanceof Error ? e.message : '推荐加载失败',
       items: [],
       stale: false,
+      reason: null,
     }
   }
+}
+
+/** 空结果文案：区分"题库没收录这道题"与"有收录但没有相近题" */
+function emptyText(state: RecommendState | undefined): string {
+  if (state?.reason === 'not_indexed') {
+    return '这道题不在平台的公开题库里（如比赛专属题），无法匹配同类题。'
+  }
+  return '没有找到标签与难度相近的未做题。'
 }
 </script>
 
@@ -157,7 +168,7 @@ async function load(key: string, item: ReviewItem): Promise<void> {
           v-else-if="!panels[rowKey(item)] || panels[rowKey(item)]?.items.length === 0"
           class="panel-hint"
         >
-          没有找到标签与难度相近的未做题。
+          {{ emptyText(panels[rowKey(item)]) }}
         </p>
         <template v-else>
           <p v-if="panels[rowKey(item)]?.stale" class="panel-hint">

@@ -299,6 +299,7 @@ REGISTRY: dict[str, type[PlatformAdapter]] = {
 ```python
 class Verdict(str, Enum):     # AC/WA/CE/RE/TLE/MLE/OLE/UKE/JG/UNAC（平台无关，adapter 归一化）
 class Capability(str, Enum):  # SUBMISSIONS / USER_INFO / RATING / CONTESTS / REFINE_VERDICT
+                              # / PROBLEMSET（全量题单）/ PROBLEM_LOOKUP（题库定点查询）
 class AuthMode(str, Enum):    # NONE（匿名）/ COOKIE（cookie 授权）
 ```
 
@@ -335,6 +336,13 @@ AdapterError                    # 基类
 | `fetch_rating_history(handle, credentials=None) -> list[RatingPoint]` | rating 历史（后续增量） | RATING |
 | `fetch_contests() -> list[ContestInfo]` | 比赛信息（平台级，无 handle，未来 contest 功能消费） | CONTESTS |
 | `fetch_submission_verdict(record_id, credentials=None) -> Verdict \| None` | 单条提交的细分结果精化（列表只有 UNAC 的平台拉详情判定）；返回 None = 无法判定保持原样 | REFINE_VERDICT |
+| `fetch_problemset() -> list[ProblemMeta]` | 全量题单（一次拉全站，含标签/难度），错题本同类推荐消费 | PROBLEMSET |
+| `fetch_problem(problem_key) -> ProblemMeta \| None` | 按题号查单题画像；查不到返回 None。适用于无法全量拉取的平台 | PROBLEM_LOOKUP |
+| `find_similar_problems(target, *, limit) -> list[ProblemMeta]` | 按源题标签与难度查候选（可利用服务端过滤），未做排除，由上层统一打分 | PROBLEM_LOOKUP |
+
+> 推荐取数有两种形态：能一次拉全站的平台实现 `PROBLEMSET`（CF），
+> 只能定点查的平台实现 `PROBLEM_LOOKUP`（牛客）。service 按能力分支，
+> 主干不判断平台；两种形态共用 `review.recommend_problems` 打分。
 
 **流式契约（SyncBatch）**：`{items, checkpoint, done}`——`items` 为本批提交
 （通常一页）；`checkpoint` 为全量回填断点（增量模式恒为 None），平台自解释
