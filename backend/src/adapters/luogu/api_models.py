@@ -157,3 +157,71 @@ class LgRecordShowData(BaseModel):
     record: LgRecordShow = Field(default_factory=LgRecordShow)
 
 
+# ===== 题目查询（PROBLEM_LOOKUP：题目画像 / 标签目录 / 按标签列表） =====
+
+
+class LgProblemTag(BaseModel):
+    """题目页里的标签主键（洛谷只给 id，文本要查 /_lfe/tags 的映射）。"""
+
+    id: int
+
+
+class LgProblemDetail(BaseModel):
+    """题目页 data.problem（difficulty 为 0-7 档，与记录内嵌同口径）。"""
+
+    pid: str = ""
+    name: str = ""
+    difficulty: int | None = None
+    tags: list[int] = Field(default_factory=list)
+
+
+class LgTranslationName(BaseModel):
+    """translations[locale] 的最小结构（只取题名）。"""
+
+    name: str = ""
+
+
+class LgProblemShowData(BaseModel):
+    """题目页 data（translations 是 locale → 翻译对象）。"""
+
+    problem: LgProblemDetail = Field(default_factory=LgProblemDetail)
+    translations: dict[str, LgTranslationName] = Field(default_factory=dict)
+
+
+class LgProblemListItem(BaseModel):
+    """题目列表行（/problem/list 的 result 元素）。"""
+
+    pid: str = ""
+    name: str = ""
+    difficulty: int | None = None
+    tags: list[int] = Field(default_factory=list)
+
+
+class LgProblemListPage(BaseModel):
+    """题目列表分页容器（perPage 固定 50，count 为总数）。"""
+
+    result: list[LgProblemListItem] = Field(default_factory=list)
+    count: int = 0
+    perPage: int = 50
+
+
+class LgProblemListData(BaseModel):
+    problems: LgProblemListPage = Field(default_factory=LgProblemListPage)
+
+
+class LgTagEntry(BaseModel):
+    """/_lfe/tags 的标签项；type=2 才是算法标签。"""
+
+    id: int
+    name: str = ""
+    type: int = 0
+    parent: int | None = None
+
+
+class LgTagDictionary(BaseModel):
+    """/_lfe/tags 响应（裸 JSON，静态字典，含版本号）。"""
+
+    tags: list[LgTagEntry] = Field(default_factory=list)
+    _version: str = ""
+
+

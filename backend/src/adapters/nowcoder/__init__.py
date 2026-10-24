@@ -20,18 +20,26 @@ from adapters.base import (
     ProblemMeta,
     ProgressCallback,
     SyncBatch,
+    TagMeta,
     UserInfo,
     UserNotFoundError,
 )
 from adapters.net import HttpFetcher
-from adapters.nowcoder.api_models import NcRatingHistoryEnvelope, NcSubmissionRow
-from adapters.nowcoder.normalize import map_verdict
+from adapters.nowcoder.api_models import (
+    NcKnowledgeCatalogEnvelope,
+    NcProblemListEnvelope,
+    NcRatingHistoryEnvelope,
+    NcSubmissionRow,
+)
+from adapters.nowcoder.normalize import map_verdict, parse_problem_url
 
 logger = logging.getLogger("xcpc.adapters.nowcoder")
 
 BASE = "https://ac.nowcoder.com"
 PRACTICE_CODING_URL = f"{BASE}/acm/contest/profile/{{uid}}/practice-coding"
 RATING_HISTORY_URL = f"{BASE}/acm/contest/rating-history"
+PROBLEM_LIST_JSON_URL = f"{BASE}/acm/problem/list/json"
+KNOWLEDGE_CATALOG_URL = f"{BASE}/acm/problem/knowledge/catalog"
 
 PAGE_SIZE = 50  # 经实测，200 有重复页 bug，50 稳定
 MAX_PAGES = 100  # 安全护栏
@@ -293,6 +301,92 @@ class NowcoderAdapter(PlatformAdapter):
                 )
             )
         return out
+
+    # ===== 题目链接解析（手动收录） =====
+
+    @staticmethod
+    def parse_problem_url(url: str) -> str | None:
+        """题目链接 → problem_key（纯数字题号）；纯字符串解析。"""
+        return parse_problem_url(url)
+
+    # ===== 按算法查找（标签目录 + 按标签搜题） =====
+
+    async def list_problem_tags(self) -> list[TagMeta]:
+        """知识点目录（knowledge/catalog，裸 JSON）。
+
+        注意这是「按知识点练习」的精选目录（15 组 155 个叶子），不是题库 tag
+        的全集；但目录里的 id 可以直接当题库的 tagId 用（实测一致）。
+        totalCount 是该知识点下的题目数，可直接展示。
+        """
+        data = await self._get_json(
+            KNOWLEDGE_CATALOG_URL, NcKnowledgeCatalogEnvelope, "知识点目录"
+        )
+        if data is None or data.data is None:
+            return []
+        out: list[TagMeta] = []
+        for group in data.data.groups:
+            if group.hidden:
+                continue
+            for child in group.childTags:
+                out.append(
+                    TagMeta(
+                        id=str(child.id),
+                        name=child.name or str(child.id),
+                        group=child.groupName or group.name,
+                        count=child.totalCount,
+                    )
+                )
+        return out
+
+    async def search_problems(
+        self, tag_id: str, *, page: int = 1
+    ) -> list[ProblemMeta]:
+        """按知识点浏览题库一页（list/json，裸 JSON，比 HTML 稳）。"""
+        data = await self._get_json(
+            PROBLEM_LIST_JSON_URL,
+            NcProblemListEnvelope,
+            "题库列表",
+            params={"tagId": tag_id, "page": page, "pageSize": PROBLEM_PAGE_SIZE},
+        )
+        if data is None or data.data is None:
+            return []
+        return [self._to_problem_meta(row) for row in data.data.problemSets]
+
+    @staticmethod
+    def _to_problem_meta(row: Any) -> ProblemMeta:
+        """JSON 题目行 → ProblemMeta（key 用纯数字 problemId，不用 showId）。"""
+        return ProblemMeta(
+            problem_key=str(row.problemId),
+            name=row.name,
+            rating=row.difficulty,
+            tags=[t.name for t in row.tagList],
+            tag_ids=[str(t.id) for t in row.tagList],
+            url=f"{BASE}/acm/problem/{row.problemId}",
+        )
+
+    async def _get_json(
+        self,
+        url: str,
+        model: Any,
+        label: str,
+        *,
+        params: dict[str, Any] | None = None,
+    ) -> Any:
+        """GET 裸 JSON 并校验信封；code != 0 或解析失败抛 PlatformError。"""
+        resp = await self._fetcher.request(
+            "GET",
+            url,
+            params=params,
+            platform=self.platform_id,
+            min_interval=self.min_interval,
+        )
+        try:
+            envelope = model.model_validate_json(resp.text)
+        except ValueError as exc:
+            raise PlatformError(f"牛客 {label}格式异常: {exc}") from exc
+        if envelope.code != 0:
+            raise PlatformError(f"牛客 {label}返回错误: {envelope.msg}")
+        return envelope
 
     # ===== 内部：HTTP =====
 

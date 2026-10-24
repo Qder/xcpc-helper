@@ -36,3 +36,66 @@ class NcRatingHistoryEnvelope(BaseModel):
     msg: str = ""
     code: int = 0
     data: list[NcRatingHistoryEntry] = Field(default_factory=list)
+
+
+# ===== 题库 JSON 接口（按算法查找 / 定点查询用） =====
+
+
+class NcProblemTag(BaseModel):
+    """题目行内的知识点标签（id 是题库 tagId，name 是展示名）。"""
+
+    id: int
+    name: str = ""
+    parentId: int | None = None
+
+
+class NcProblemRow(BaseModel):
+    """list/json 单条题目。
+
+    problemId 是纯数字题号（与提交归一化的 problem_key 同口径），
+    showId 是 NC{problemId} 的展示型题号——入库一律用 problemId。
+    """
+
+    problemId: int
+    showId: str = ""
+    name: str = ""
+    difficulty: int | None = None
+    tagList: list[NcProblemTag] = Field(default_factory=list)
+
+
+class NcProblemListData(BaseModel):
+    problemCount: int = 0
+    problemSets: list[NcProblemRow] = Field(default_factory=list)
+
+
+class NcProblemListEnvelope(BaseModel):
+    code: int = 0
+    msg: str = ""
+    data: NcProblemListData | None = None
+
+
+class NcKnowledgeTag(BaseModel):
+    """知识点目录的叶子标签（可直接当 tagId 用于题库过滤）。"""
+
+    id: int
+    name: str = ""
+    groupName: str = ""
+    totalCount: int | None = None
+
+
+class NcKnowledgeGroup(BaseModel):
+    id: int
+    name: str = ""
+    hidden: bool = False
+    childTags: list[NcKnowledgeTag] = Field(default_factory=list)
+
+
+class NcKnowledgeCatalogData(BaseModel):
+    groupCount: int = 0
+    groups: list[NcKnowledgeGroup] = Field(default_factory=list)
+
+
+class NcKnowledgeCatalogEnvelope(BaseModel):
+    code: int = 0
+    msg: str = ""
+    data: NcKnowledgeCatalogData | None = None

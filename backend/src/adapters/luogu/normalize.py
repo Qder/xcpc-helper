@@ -4,6 +4,8 @@
 校准），勿凭记忆改写：注意 4=MLE、5=TLE 与直觉相反。
 """
 
+import re
+
 from adapters.base import Verdict
 
 # record.status → 统一 Verdict：
@@ -130,3 +132,34 @@ def problem_url(pid: str, contest_id: int | None) -> str:
     if contest_id is not None:
         return f"{base}?contestId={contest_id}"
     return base
+
+
+# ===== 题目链接解析（手动收录用，纯字符串，不发请求） =====
+
+_LUOGU_HOST = "luogu.com.cn"
+# /problem/{pid}；pid 形如 P1001 / B2001 / CF1A / SP123 / AT_abc123_a / U123456
+_LUOGU_PROBLEM_RE = re.compile(r"/problem/([A-Za-z][A-Za-z0-9_]*)", re.IGNORECASE)
+# /problem/list 是题库列表页，不是题目；同段的其他保留字一并排除
+_LUOGU_RESERVED = frozenset({"list", "tags", "tag"})
+
+
+def parse_problem_url(url: str) -> str | None:
+    """洛谷题目链接 → problem_key（pid）；不认识返回 None。
+
+    忽略 ?contestId= 与 #hash：比赛里的题也是同一个 pid，contestId 只影响
+    提交归属，不影响题目身份。前缀字母统一大写（洛谷题号前缀规范大写，
+    URL 里偶见小写），其余部分保持原样（`AT_abc123_a` 的主体是小写）。
+    `/problem/list` 这类题库页返回 None，避免把「list」当成题号。
+    """
+    if not url or _LUOGU_HOST not in url.lower():
+        return None
+    m = _LUOGU_PROBLEM_RE.search(url)
+    if m is None:
+        return None
+    pid = m.group(1)
+    if pid.lower() in _LUOGU_RESERVED:
+        return None
+    prefix_len = 0
+    while prefix_len < len(pid) and pid[prefix_len].isalpha():
+        prefix_len += 1
+    return pid[:prefix_len].upper() + pid[prefix_len:]

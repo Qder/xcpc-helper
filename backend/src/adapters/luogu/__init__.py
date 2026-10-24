@@ -38,8 +38,10 @@ from adapters.base import (
     PlatformAdapter,
     PlatformError,
     PlatformSubmission,
+    ProblemMeta,
     ProgressCallback,
     SyncBatch,
+    TagMeta,
     UserInfo,
     UserNotFoundError,
     Verdict,
@@ -47,15 +49,19 @@ from adapters.base import (
 from adapters.luogu.api_models import (
     LENTILLE_CONTEXT_RE,
     LgLentilleContext,
+    LgProblemListData,
+    LgProblemShowData,
     LgRecordListData,
     LgRecordRow,
     LgRecordShowData,
+    LgTagDictionary,
     LgUserSearchResult,
     LgUserSummary,
 )
 from adapters.luogu.normalize import (
     map_language,
     map_verdict,
+    parse_problem_url,
     pick_verdict,
     problem_url,
 )
@@ -67,6 +73,9 @@ BASE = "https://www.luogu.com.cn"
 RECORD_LIST_URL = f"{BASE}/record/list"
 RECORD_DETAIL_URL = f"{BASE}/record"  # /record/{id}
 USER_SEARCH_URL = f"{BASE}/api/user/search"
+PROBLEM_URL = f"{BASE}/problem"  # /problem/{pid}
+PROBLEM_LIST_URL = f"{BASE}/problem/list"
+TAG_DICTIONARY_URL = f"{BASE}/_lfe/tags"
 
 MAX_PAGES = 1000  # 安全护栏（perPage 20 × 1000 = 2 万条），正常路径不会触发
 MAX_RETRIES = 3  # 传输异常 / 429 / 5xx 重试次数
@@ -81,7 +90,12 @@ class LuoguAdapter(PlatformAdapter):
     platform_id = "luogu"
     name = "洛谷"
     capabilities = frozenset(
-        {Capability.SUBMISSIONS, Capability.USER_INFO, Capability.REFINE_VERDICT}
+        {
+            Capability.SUBMISSIONS,
+            Capability.USER_INFO,
+            Capability.REFINE_VERDICT,
+            Capability.PROBLEM_LOOKUP,
+        }
     )
     auth = AuthMode.COOKIE
     min_interval = 5.0  # 反爬敏感平台：低频请求长期避开 JS 挑战升级
@@ -244,6 +258,109 @@ class LuoguAdapter(PlatformAdapter):
             return None
         statuses = [case.status for sub in judge.subtasks for case in sub.test_cases]
         return pick_verdict(statuses)
+
+    # ===== 题目查询（PROBLEM_LOOKUP：画像 / 标签目录 / 按标签搜题） =====
+
+    @staticmethod
+    def parse_problem_url(url: str) -> str | None:
+        """题目链接 → pid；纯字符串解析（忽略 ?contestId=）。"""
+        return parse_problem_url(url)
+
+    async def fetch_problem(self, problem_key: str) -> ProblemMeta | None:
+        """按 pid 查单题画像（题目页 lentille）。
+
+        题目不存在返回 None（lentille 404 → 这里吸收）；网络故障与凭据失效
+        仍然抛出——「题不存在」和「平台连不上」是两回事，不能都咽成 None，
+        否则用户会看到「该题不在题库」而实际是 cookie 过期。
+        """
+        try:
+            async with self._session_factory() as session:
+                data = await self._get_page_data(
+                    session, f"{PROBLEM_URL}/{problem_key}"
+                )
+        except PlatformError as exc:
+            if "status=404" in str(exc) or "HTTP 404" in str(exc):
+                return None
+            raise
+        show = self._parse(data, LgProblemShowData, "题目详情")
+        problem = show.problem
+        if not problem.pid:
+            return None
+        return ProblemMeta(
+            problem_key=problem.pid,
+            name=self._problem_name(show),
+            rating=problem.difficulty,
+            tags=[],  # 题目页只给主键，文本需查 /_lfe/tags；推荐按 tag_ids 匹配
+            tag_ids=[str(t) for t in problem.tags],
+            url=problem_url(problem.pid, None),
+        )
+
+    @staticmethod
+    def _problem_name(show: LgProblemShowData) -> str:
+        """题名：优先 problem.name，回退当前 locale 译文（实测 name 偶发为空）。"""
+        if show.problem.name:
+            return show.problem.name
+        zh = show.translations.get("zh-CN")
+        return zh.name if zh else ""
+
+    async def find_similar_problems(
+        self, target: ProblemMeta, *, limit: int
+    ) -> list[ProblemMeta]:
+        """按源题首个标签查一页候选（洛谷无难度区间过滤，服务端不做难度筛）。
+
+        洛谷的难度窗口由共享打分（review.recommend_problems）处理；这里只
+        减少候选规模。没有标签主键时无法服务端过滤，返回空（上层按
+        no_match 提示）。
+        """
+        if not target.tag_ids:
+            return []
+        return await self.search_problems(target.tag_ids[0], page=1)
+
+    async def list_problem_tags(self) -> list[TagMeta]:
+        """算法标签目录（/_lfe/tags，裸 JSON；type=2 才是算法）。
+
+        其余 type 是区域/来源/时间/特殊题目/其他，混进来会让搜题面板出现
+        大量无意义筛选。parent 用于分组展示（父标签名）。
+        """
+        async with self._session_factory() as session:
+            data = await self._get_api_json(session, TAG_DICTIONARY_URL)
+        tags = self._parse(data, LgTagDictionary, "标签字典").tags
+        by_id = {t.id: t for t in tags}
+        out: list[TagMeta] = []
+        for t in tags:
+            if t.type != 2:
+                continue
+            parent = by_id.get(t.parent) if t.parent is not None else None
+            out.append(
+                TagMeta(
+                    id=str(t.id),
+                    name=t.name or str(t.id),
+                    group=parent.name if parent else "",
+                )
+            )
+        return out
+
+    async def search_problems(
+        self, tag_id: str, *, page: int = 1
+    ) -> list[ProblemMeta]:
+        """按标签浏览题库一页（/problem/list，lentille data.problems）。"""
+        async with self._session_factory() as session:
+            data = await self._get_page_data(
+                session, PROBLEM_LIST_URL, params={"tag": tag_id, "page": page}
+            )
+        listing = self._parse(data, LgProblemListData, "题目列表").problems
+        return [
+            ProblemMeta(
+                problem_key=item.pid,
+                name=item.name,
+                rating=item.difficulty,
+                tags=[],
+                tag_ids=[str(t) for t in item.tags],
+                url=problem_url(item.pid, None),
+            )
+            for item in listing.result
+            if item.pid
+        ]
 
     # ===== 一键登录（browser-login，可选依赖 Playwright） =====
 

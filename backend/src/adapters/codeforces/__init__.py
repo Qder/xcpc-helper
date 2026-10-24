@@ -30,7 +30,12 @@ from adapters.codeforces.api_models import (
     CfSubmissionRow,
     CfUserInfo,
 )
-from adapters.codeforces.normalize import map_verdict, problem_key, problem_url
+from adapters.codeforces.normalize import (
+    map_verdict,
+    parse_problem_url,
+    problem_key,
+    problem_url,
+)
 from adapters.net import HttpFetcher
 
 logger = logging.getLogger("xcpc.adapters.codeforces")
@@ -194,6 +199,18 @@ class CodeforcesAdapter(PlatformAdapter):
                 )
             )
         return out
+
+    # ===== 题目链接解析（手动收录） =====
+
+    @staticmethod
+    def parse_problem_url(url: str) -> str | None:
+        """题目链接 → problem_key（如 2245F）；纯字符串解析。
+
+        CF 的题目画像与按标签搜题都走全量题单缓存（service 层），因此不声明
+        PROBLEM_LOOKUP，也不在这里实现 fetch_problem / search_problems——
+        免得绕开缓存去打一个 2 秒级的全站请求。
+        """
+        return parse_problem_url(url)
 
     # ===== 内部 =====
 

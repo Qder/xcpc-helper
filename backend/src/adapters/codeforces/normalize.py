@@ -1,5 +1,7 @@
 """Codeforces 数据归一化纯函数（无 IO，便于单测）。"""
 
+import re
+
 from adapters.base import Verdict
 
 # verdict 归一化：OK→AC 等；未列出的（CHALLENGED / SKIPPED / PARTIAL /
@@ -40,3 +42,36 @@ def problem_key(contest_id: int | None, index: str | None, name: str) -> str:
     if contest_id is not None and index:
         return f"{contest_id}{index}"
     return name or "?"
+
+
+# ===== 题目链接解析（手动收录用，纯字符串，不发请求） =====
+
+# 官方域（镜像站/移动端/无域名前缀的裸路径都不认，避免把别站题号当 CF 题）
+_CF_HOST = "codeforces.com"
+# /contest/{id}/problem/{index}、/gym/{id}/problem/{index}
+# （group 链接 /group/{hash}/contest/{id}/problem/{index} 也含这一段，一并命中）
+_CF_PATH_RE = re.compile(r"/(?:contest|gym)/(\d+)/problem/([A-Za-z0-9]+)", re.IGNORECASE)
+# /problemset/problem/{id}/{index}
+_CF_PROBLEMSET_RE = re.compile(
+    r"/problemset/problem/(\d+)/([A-Za-z0-9]+)", re.IGNORECASE
+)
+
+
+def parse_problem_url(url: str) -> str | None:
+    """Codeforces 题目链接 → problem_key（如 2245F）；不认识返回 None。
+
+    识别三种形态（忽略 scheme / query / hash / 尾斜杠 / 大小写差异）：
+    - /contest/2245/problem/F
+    - /gym/105234/problem/A
+    - /problemset/problem/2245/F
+    与问题的 problem_key 同口径（contestId + index 直接拼接），
+    否则「收录后 AC 了仍显示为收录」。
+    """
+    if not url or _CF_HOST not in url.lower():
+        return None
+    m = _CF_PATH_RE.search(url)
+    if m is None:
+        m = _CF_PROBLEMSET_RE.search(url)
+    if m is None:
+        return None
+    return f"{m.group(1)}{m.group(2).upper()}"

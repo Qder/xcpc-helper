@@ -16,6 +16,7 @@ from adapters.base import (
     AuthExpiredError,
     Credentials,
     PlatformError,
+    ProblemMeta,
     UserNotFoundError,
     Verdict,
 )
@@ -621,3 +622,204 @@ async def test_fetch_no_progress_on_incremental():
     ):
         pass
     assert calls == []
+
+
+# ===== PROBLEM_LOOKUP：题目画像 / 标签目录 / 按标签搜题 =====
+
+
+def problem_page(problem: dict, translations: dict | None = None) -> str:
+    """题目页 lentille（template=problem.show）。"""
+    return _html(
+        {
+            "instance": "main",
+            "template": "problem.show",
+            "status": 200,
+            "locale": "zh-CN",
+            "data": {
+                "problem": problem,
+                "translations": translations or {},
+            },
+            "user": None,
+            "time": 0,
+        }
+    )
+
+
+def problem_list_page(items: list[dict], count: int = 0, per_page: int = 50) -> str:
+    """题目列表页 lentille（template=problem.list）。"""
+    return _html(
+        {
+            "instance": "main",
+            "template": "problem.list",
+            "status": 200,
+            "locale": "zh-CN",
+            "data": {
+                "problems": {"result": items, "count": count, "perPage": per_page},
+                "filter": {"tag": [[6]], "page": 1},
+            },
+            "user": None,
+            "time": 0,
+        }
+    )
+
+
+async def test_fetch_problem_maps_profile():
+    """题目页 → ProblemMeta：题名/难度/标签主键（tags 文本留空，推荐按主键匹配）。"""
+
+    def handler(url, params):
+        assert url.endswith("/problem/P4779")
+        return FakeResponse(
+            200,
+            problem_page(
+                {
+                    "pid": "P4779",
+                    "name": "【模板】单源最短路径（标准版）",
+                    "difficulty": 3,
+                    "tags": [6, 148, 160, 523],
+                }
+            ),
+        )
+
+    adapter = make_adapter(handler)
+    meta = await adapter.fetch_problem("P4779")
+
+    assert meta is not None
+    assert meta.problem_key == "P4779"
+    assert meta.name == "【模板】单源最短路径（标准版）"
+    assert meta.rating == 3  # 0-7 档，与提交内嵌 difficulty 同口径
+    assert meta.tags == []
+    assert meta.tag_ids == ["6", "148", "160", "523"]
+    assert meta.url == "https://www.luogu.com.cn/problem/P4779"
+
+
+async def test_fetch_problem_falls_back_to_translation_name():
+    """problem.name 为空时取 zh-CN 译名，避免空题名。"""
+
+    def handler(url, params):
+        return FakeResponse(
+            200,
+            problem_page(
+                {"pid": "P1001", "name": "", "difficulty": 1, "tags": [1]},
+                {"zh-CN": {"name": "A+B Problem"}},
+            ),
+        )
+
+    adapter = make_adapter(handler)
+    meta = await adapter.fetch_problem("P1001")
+    assert meta is not None
+    assert meta.name == "A+B Problem"
+
+
+async def test_fetch_problem_missing_returns_none():
+    """题目不存在（lentille 404）→ None；其他错误仍然抛出。"""
+
+    def handler(url, params):
+        return FakeResponse(200, error_page(404, "题目不存在"))
+
+    adapter = make_adapter(handler)
+    assert await adapter.fetch_problem("P999999999") is None
+
+
+async def test_fetch_problem_network_error_propagates():
+    """网络/服务端故障不能被当成「题不存在」咽掉。"""
+
+    def handler(url, params):
+        return FakeResponse(200, error_page(500, "系统错误"))
+
+    adapter = make_adapter(handler)
+    with pytest.raises(PlatformError):
+        await adapter.fetch_problem("P1001")
+
+
+async def test_list_problem_tags_filters_algorithm_type():
+    """标签目录只取 type=2（算法），其余区域/来源/时间等不进搜题面板。"""
+
+    dictionary = {
+        "tags": [
+            {"id": 1, "name": "模拟", "type": 2, "parent": 110},
+            {"id": 6, "name": "图论", "type": 2, "parent": None},
+            {"id": 110, "name": "基础算法", "type": 2, "parent": None},
+            {"id": 18, "name": "2001", "type": 4, "parent": None},
+            {"id": 83, "name": "NOIP 提高组", "type": 3, "parent": None},
+        ],
+        "_version": "zh-CN/2026102415",
+    }
+
+    def handler(url, params):
+        assert url.endswith("/_lfe/tags")
+        return FakeResponse(200, json.dumps(dictionary, ensure_ascii=False))
+
+    adapter = make_adapter(handler)
+    tags = await adapter.list_problem_tags()
+
+    assert [t.id for t in tags] == ["1", "6", "110"]
+    assert [t.name for t in tags] == ["模拟", "图论", "基础算法"]
+    # parent 存在时带上父标签名用于分组
+    assert tags[0].group == "基础算法"
+    assert tags[1].group == ""
+
+
+async def test_search_problems_maps_page():
+    """按标签浏览：走 /problem/list，pid 为空的行跳过。"""
+
+    def handler(url, params):
+        assert url.endswith("/problem/list")
+        assert params["tag"] == "6"
+        assert params["page"] == 2
+        return FakeResponse(
+            200,
+            problem_list_page(
+                [
+                    {"pid": "P4779", "name": "单源最短路", "difficulty": 3, "tags": [6, 148]},
+                    {"pid": "", "name": "异常行", "difficulty": 1, "tags": []},
+                ],
+                count=1334,
+            ),
+        )
+
+    adapter = make_adapter(handler)
+    metas = await adapter.search_problems("6", page=2)
+
+    assert len(metas) == 1
+    assert metas[0].problem_key == "P4779"
+    assert metas[0].rating == 3
+    assert metas[0].tag_ids == ["6", "148"]
+
+
+async def test_find_similar_uses_first_tag():
+    """同类候选按源题首个标签查一页；无标签主键时返回空（不打无谓请求）。"""
+    seen: list[dict] = []
+
+    def handler(url, params):
+        seen.append(dict(params))
+        return FakeResponse(200, problem_list_page([]))
+
+    adapter = make_adapter(handler)
+    with_tags = ProblemMeta(
+        problem_key="P4779", name="", rating=3, tags=[], tag_ids=["6", "148"]
+    )
+    await adapter.find_similar_problems(with_tags, limit=5)
+    no_tags = ProblemMeta(problem_key="P1", name="", rating=1, tags=[], tag_ids=[])
+    assert await adapter.find_similar_problems(no_tags, limit=5) == []
+
+    assert len(seen) == 1
+    assert seen[0]["tag"] == "6"  # 只用首个标签，避免多标签 OR 放大候选
+
+
+def test_parse_problem_url():
+    """洛谷链接解析：忽略 query/hash，前缀字母统一大写。"""
+    from adapters.luogu.normalize import parse_problem_url
+
+    assert parse_problem_url("https://www.luogu.com.cn/problem/P1001") == "P1001"
+    assert (
+        parse_problem_url("https://www.luogu.com.cn/problem/P16967?contestId=330287")
+        == "P16967"
+    )
+    assert parse_problem_url("http://luogu.com.cn/problem/p1001#hash") == "P1001"
+    assert parse_problem_url("https://www.luogu.com.cn/problem/CF1A") == "CF1A"
+    assert parse_problem_url("https://www.luogu.com.cn/problem/AT_abc123_a") == (
+        "AT_abc123_a"
+    )
+    assert parse_problem_url("https://codeforces.com/contest/2245/problem/F") is None
+    assert parse_problem_url("") is None
+    assert parse_problem_url("https://www.luogu.com.cn/problem/list") is None

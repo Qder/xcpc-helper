@@ -497,6 +497,160 @@ async def test_find_similar_without_rating_skips_difficulty():
     assert "maxDifficulty" not in seen
 
 
+# ===== 按算法查找（标签目录 + 按标签搜题）=====
+
+
+def _problem_list_json(rows: list[dict], count: int = 0) -> str:
+    """list/json 响应（字段与线上一致的最小集合）。"""
+    return json.dumps(
+        {
+            "msg": "OK",
+            "code": 0,
+            "data": {"problemCount": count, "problemSets": rows},
+        },
+        ensure_ascii=False,
+    )
+
+
+async def test_search_problems_maps_json_rows():
+    """按标签搜题走 list/json；problem_key 用纯数字 problemId（不是 showId）。"""
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert "/acm/problem/list/json" in str(request.url)
+        assert request.url.params["tagId"] == "14424"
+        assert request.url.params["page"] == "2"
+        assert request.url.params["pageSize"] == "50"
+        return httpx.Response(
+            200,
+            text=_problem_list_json(
+                [
+                    {
+                        "problemId": 274704,
+                        "showId": "NC274704",
+                        "name": "祥子拆团",
+                        "difficulty": 2100,
+                        "tagList": [
+                            {"id": 14424, "name": "费马小定理"},
+                            {"id": 145607, "name": "数论"},
+                        ],
+                    }
+                ],
+                count=20,
+            ),
+        )
+
+    adapter, fetcher = make_adapter(handler)
+    try:
+        metas = await adapter.search_problems("14424", page=2)
+    finally:
+        await fetcher.aclose()
+
+    assert len(metas) == 1
+    meta = metas[0]
+    # 必须与提交归一化的 problem_key（纯数字）同口径
+    assert meta.problem_key == "274704"
+    assert meta.name == "祥子拆团"
+    assert meta.rating == 2100
+    assert meta.tags == ["费马小定理", "数论"]
+    assert meta.tag_ids == ["14424", "145607"]
+    assert meta.url == "https://ac.nowcoder.com/acm/problem/274704"
+
+
+async def test_search_problems_error_envelope_raises():
+    """code != 0 抛 PlatformError（不静默返回空列表）。"""
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, text='{"msg":"该知识点不存在或已隐藏","code":1,"data":null}'
+        )
+
+    adapter, fetcher = make_adapter(handler)
+    try:
+        with pytest.raises(PlatformError):
+            await adapter.search_problems("bad-tag")
+    finally:
+        await fetcher.aclose()
+
+
+async def test_list_problem_tags_flattens_groups():
+    """知识点目录按组展开为扁平标签；hidden 组跳过。"""
+
+    catalog = json.dumps(
+        {
+            "msg": "OK",
+            "code": 0,
+            "data": {
+                "groupCount": 2,
+                "groups": [
+                    {
+                        "id": 145412,
+                        "name": "数论",
+                        "hidden": False,
+                        "childTags": [
+                            {
+                                "groupName": "数论",
+                                "name": "费马小定理",
+                                "id": 14424,
+                                "totalCount": 20,
+                            },
+                            {
+                                "groupName": "数论",
+                                "name": "欧拉函数",
+                                "id": 14427,
+                                "totalCount": 39,
+                            },
+                        ],
+                    },
+                    {
+                        "id": 999,
+                        "name": "隐藏组",
+                        "hidden": True,
+                        "childTags": [
+                            {"groupName": "隐藏组", "name": "X", "id": 1, "totalCount": 1}
+                        ],
+                    },
+                ],
+            },
+        },
+        ensure_ascii=False,
+    )
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert "/acm/problem/knowledge/catalog" in str(request.url)
+        return httpx.Response(200, text=catalog)
+
+    adapter, fetcher = make_adapter(handler)
+    try:
+        tags = await adapter.list_problem_tags()
+    finally:
+        await fetcher.aclose()
+
+    assert [t.id for t in tags] == ["14424", "14427"]
+    assert [t.name for t in tags] == ["费马小定理", "欧拉函数"]
+    assert tags[0].group == "数论"
+    assert tags[0].count == 20
+
+
+def test_parse_problem_url():
+    """牛客链接解析：题库题与比赛题都归一到纯数字题号。"""
+    from adapters.nowcoder.normalize import parse_problem_url
+
+    assert (
+        parse_problem_url("https://www.nowcoder.com/acm/problem/325377") == "325377"
+    )
+    assert (
+        parse_problem_url(
+            "https://ac.nowcoder.com/acm/contest/12345/problem/325377?x=1"
+        )
+        == "325377"
+    )
+    assert (
+        parse_problem_url("https://www.nowcoder.com/acm/problem/list") is None
+    )
+    assert parse_problem_url("https://codeforces.com/contest/2245/problem/F") is None
+    assert parse_problem_url("") is None
+
+
 # ===== 辅助函数 =====
 
 

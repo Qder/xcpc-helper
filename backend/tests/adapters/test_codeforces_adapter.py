@@ -361,6 +361,37 @@ def test_problem_key_fallback():
     assert problem_key(None, None, "X Axis") == "X Axis"
 
 
+def test_parse_problem_url():
+    """CF 链接解析：三种形态归一到同一个 problem_key（与提交同口径）。"""
+    from adapters.codeforces.normalize import parse_problem_url
+
+    assert (
+        parse_problem_url("https://codeforces.com/contest/2245/problem/F") == "2245F"
+    )
+    assert (
+        parse_problem_url("https://codeforces.com/gym/103091/problem/A") == "103091A"
+    )
+    assert (
+        parse_problem_url("https://codeforces.com/problemset/problem/2245/F") == "2245F"
+    )
+    # query / hash / 尾斜杠 / 大小写 / http 都接受
+    assert (
+        parse_problem_url("http://codeforces.com/contest/2245/problem/f?locale=en")
+        == "2245F"
+    )
+    # group 内的比赛链接含 /contest/{id}/problem/{idx}，一并命中
+    assert (
+        parse_problem_url(
+            "https://codeforces.com/group/abc/contest/2245/problem/F"
+        )
+        == "2245F"
+    )
+    # 非官方域 / 非题目页 / 空串
+    assert parse_problem_url("https://www.luogu.com.cn/problem/CF2245F") is None
+    assert parse_problem_url("https://codeforces.com/problemset") is None
+    assert parse_problem_url("") is None
+
+
 def test_difficulty_accepts_str():
     """difficulty 保留平台原始值：CF 为分数（int），LeetCode/洛谷为档位（str）。"""
     s = PlatformSubmission(

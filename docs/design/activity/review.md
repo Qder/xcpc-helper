@@ -216,9 +216,9 @@ backend/data/cache/activity/problemset/<platform>.json
 
 | 平台 | 识别的链接形态 | `problem_key` |
 | --- | --- | --- |
-| Codeforces | `/contest/{id}/problem/{idx}`、`/gym/{id}/problem/{idx}`、`/problemset/problem/{id}/{idx}` | `{id}{idx}`（如 `2245F`，与提交归一化同口径） |
-| 牛客竞赛 | `/acm/problem/{id}`（含 `/acm/contest/{cid}/problem/{id}` 之外的题库链接） | `{id}` |
-| 洛谷 | `/problem/{pid}`（忽略 `?contestId=`） | `{pid}`（如 `P1001`、`CF2245F`） |
+| Codeforces | `/contest/{id}/problem/{idx}`、`/gym/{id}/problem/{idx}`、`/problemset/problem/{id}/{idx}`（group 内链接含前一段，一并命中） | `{id}{idx}`（如 `2245F`，与提交归一化同口径） |
+| 牛客竞赛 | `/acm/problem/{id}`、`/acm/contest/{cid}/problem/{id}` | `{id}`（纯数字，**不用** `showId` 的 `NC` 前缀） |
+| 洛谷 | `/problem/{pid}`（忽略 `?contestId=`；`/problem/list` 等保留字不认） | `{pid}`（前缀字母大写归一，如 `P1001`、`CF1A`、`AT_abc123_a`） |
 
 约束：
 
@@ -233,10 +233,12 @@ backend/data/cache/activity/problemset/<platform>.json
 
 ### 3.6 按算法查找
 
-统一标签模型 `TagMeta { id, name }`，与 `ProblemMeta.tag_ids` 对齐：
+统一标签模型 `TagMeta { id, name, group, count }`，与 `ProblemMeta.tag_ids` 对齐：
 
 - **Codeforces** 没有数字主键，**用标签文本当 `id`**（`dp`、`graphs`）；
-- **牛客 / 洛谷**用平台自己的主键（HTML 里的 `data-id`）。
+- **牛客 / 洛谷**用平台自己的主键（HTML 里的 `data-id`、`/_lfe/tags` 的 `id`）；
+- `group` 是可选归类（牛客的 `groupName`、洛谷的父标签名），只用于界面分组；
+- `count` 是该标签下的题目数（平台提供时展示，不作为分页总数）。
 
 两个新增 adapter 方法（基类默认抛 `CapabilityNotSupportedError`，与现有能力方法
 同一模式，因此没实现的平台自然返回 400，前端按能力隐藏入口）：
@@ -351,7 +353,7 @@ backend/data/cache/activity/problemset/<platform>.json
 | `backend/src/adapters/codeforces/__init__.py` | 声明 `PROBLEMSET` 并实现 `fetch_problemset()` |
 | `backend/src/adapters/nowcoder/__init__.py` | 声明 `PROBLEM_LOOKUP` 并实现 `fetch_problem()` / `find_similar_problems()`（题库列表页 HTML 正则解析） |
 | `backend/src/adapters/luogu/__init__.py` | 声明 `PROBLEM_LOOKUP`（第三期新增）并实现 `fetch_problem()` / `find_similar_problems()` / `list_problem_tags()` / `search_problems()`（lentille 解析） |
-| `backend/src/adapters/*/normalize.py` | 各平台新增纯函数 `parse_problem_url()` |
+- `backend/src/adapters/*/normalize.py` | 各平台新增纯函数 `parse_problem_url()` |
 | `backend/src/adapters/base.py`（补充） | 新增 `TagMeta`、`list_problem_tags()` / `search_problems()`（基类默认抛 `CapabilityNotSupportedError`） |
 | `backend/src/modules/activity/review.py`（补充） | 新增纯函数 `merge_review()`；`ProblemRecord` 增 `manual` 字段 |
 | `backend/src/modules/activity/store.py`（补充） | `UserStore` 新增手动清单读写（`MANUAL_REVIEW_FILE`） |

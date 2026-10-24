@@ -144,6 +144,20 @@ class ProblemMeta(BaseModel):
     url: str = ""
 
 
+class TagMeta(BaseModel):
+    """平台算法标签（错题本「按算法查找」的筛选项）。
+
+    id 是搜题时传给平台的过滤键：有数字主键的平台（牛客/洛谷）用平台主键，
+    Codeforces 没有主键，用标签文本当 id。name 为展示名。
+    group 是可选的归类（牛客的 groupName、洛谷的父标签名），仅用于界面分组。
+    """
+
+    id: str
+    name: str
+    group: str = ""
+    count: int | None = None  # 该标签下的题目数（平台提供时）
+
+
 class Credentials(BaseModel):
     """平台凭据（第一期匿名平台恒为空；cookie 授权平台预留）。
 
@@ -286,6 +300,34 @@ class PlatformAdapter:
         仅具备 PROBLEM_LOOKUP 能力时实现。
         """
         raise CapabilityNotSupportedError(f"{self.platform_id} 不支持题目查询")
+
+    async def list_problem_tags(self) -> list[TagMeta]:
+        """平台算法标签目录（错题本「按算法查找」的筛选项）。
+
+        只在用户打开搜题面板时调用一次，不做全量缓存。
+        仅具备 PROBLEM_LOOKUP 能力时实现。
+        """
+        raise CapabilityNotSupportedError(f"{self.platform_id} 不支持标签目录")
+
+    async def search_problems(
+        self, tag_id: str, *, page: int = 1
+    ) -> list[ProblemMeta]:
+        """按算法标签浏览题库的一页（约 50 条）。
+
+        tag_id 来自 list_problem_tags()；分页从 1 开始，末页由返回条数不足
+        页大小判定（调用方不依赖总数）。
+        仅具备 PROBLEM_LOOKUP 能力时实现。
+        """
+        raise CapabilityNotSupportedError(f"{self.platform_id} 不支持按标签搜题")
+
+    @staticmethod
+    def parse_problem_url(url: str) -> str | None:
+        """题目链接 → 平台内 problem_key；不认识返回 None（默认不支持）。
+
+        adapter 覆盖此静态方法即可让 service 按注册顺序识别链接，无需在
+        service 里维护平台 if-else 表。必须是纯字符串解析（不发请求）。
+        """
+        return None
 
     async def fetch_submission_verdict(
         self, record_id: str, credentials: Credentials | None = None
