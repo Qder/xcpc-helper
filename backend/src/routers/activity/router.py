@@ -21,6 +21,7 @@ from modules.activity.schemas import (
     ProfileUpdateIn,
     RefineConfigIn,
     RefineStatusOut,
+    ReviewOut,
     SubmissionsOut,
     SyncIn,
     UpdateCredentialsIn,
@@ -177,6 +178,16 @@ async def get_submissions(
     platform: Annotated[str | None, Query()] = None,
 ) -> SubmissionsOut:
     return service.submissions(date=date, platform=platform)
+
+
+@router.get("/review", response_model=ReviewOut)
+async def get_review(
+    service: ServiceDep,
+    platform: Annotated[str | None, Query()] = None,
+    status: Annotated[str, Query()] = "all",
+) -> ReviewOut:
+    """错题本：未通过 + 挣扎题（纯本地聚合，不触发同步）。"""
+    return service.review_list(platform, status)
 
 
 @router.post("/sync", status_code=202)

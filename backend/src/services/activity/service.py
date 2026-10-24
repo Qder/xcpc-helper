@@ -33,7 +33,7 @@ from core.exceptions import (
     ConflictError,
     NotFoundError,
 )
-from modules.activity import aggregate
+from modules.activity import aggregate, review
 from modules.activity import store as activity_store
 from modules.activity.models import DEFAULT_USER_ID, Account, Submission
 from modules.activity.refine import RefineEngine
@@ -53,6 +53,8 @@ from modules.activity.schemas import (
     ProfileOut,
     ProfileUpdateIn,
     RefineStatusOut,
+    ReviewItemOut,
+    ReviewOut,
     SubmissionOut,
     SubmissionsOut,
     VerifyIn,
@@ -500,6 +502,50 @@ class ActivityService:
                     submissions, tz=tz, days=self._settings.activity_window_days
                 )
             ],
+        )
+
+    # ===== 错题本与同类推荐（review，设计见 activity/review.md） =====
+
+    def review_list(self, platform: str | None, status: str) -> ReviewOut:
+        """错题本：未通过 + 挣扎题（按最近尝试时间倒序）。
+
+        status 取 all / unsolved / struggled；platform 为 None 表示全部平台。
+        纯本地读取，不触发同步。
+        """
+        if platform is not None:
+            self._adapter(platform)
+        if status not in ("all", "unsolved", "struggled"):
+            raise BadRequestError(f"不支持的状态筛选: {status}")
+
+        store = self._store()
+        profile = store.load_profile()
+        records = review.review_records(self._submissions(platform))
+        if status != "all":
+            records = [r for r in records if r.status == status]
+
+        tz = datetime.now().astimezone().tzinfo
+        capable = {
+            pid
+            for pid, adapter in self._adapters.items()
+            if Capability.PROBLEMSET in adapter.capabilities
+        }
+        return ReviewOut(
+            items=[
+                ReviewItemOut(
+                    platform=r.platform,
+                    problemKey=r.problem_key,
+                    problemName=r.problem_name,
+                    problemUrl=r.problem_url,
+                    difficulty=r.difficulty,
+                    status=r.status,
+                    failCount=r.fail_count,
+                    lastAttemptAt=datetime.fromtimestamp(r.last_attempt_at, tz=tz),
+                    canRecommend=r.platform in capable,
+                )
+                for r in records
+            ],
+            bound=bool(profile.accounts),
+            synced=any(acc.last_synced_at is not None for acc in profile.accounts),
         )
 
     def submissions(

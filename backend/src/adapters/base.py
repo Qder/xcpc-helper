@@ -55,6 +55,7 @@ class Capability(str, Enum):
     RATING = "rating"  # rating 历史（后续增量，结构已预留）
     CONTESTS = "contests"  # 比赛信息（平台级，未来 contest 功能消费）
     REFINE_VERDICT = "refine_verdict"  # 单条提交细分结果精化（如洛谷 UNAC → 详情判定）
+    PROBLEMSET = "problemset"  # 平台题单（标签/难度），错题本同类推荐消费
 
 
 class AuthMode(str, Enum):

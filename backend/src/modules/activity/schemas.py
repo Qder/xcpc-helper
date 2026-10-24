@@ -106,6 +106,31 @@ class SyncIn(BaseModel):
     platform: str | None = None  # 为空则同步全部账号
 
 
+# ===== 错题本与同类推荐（review，设计见 activity/review.md） =====
+
+ReviewStatusOut = Literal["unsolved", "struggled"]
+
+
+class ReviewItemOut(BaseModel):
+    """错题本条目（未通过 / 挣扎题）。"""
+
+    platform: str
+    problemKey: str
+    problemName: str
+    problemUrl: str
+    difficulty: int | str | None = None  # 平台原始难度值，不跨平台归一
+    status: ReviewStatusOut
+    failCount: int  # 首次 AC 之前的失败次数（unsolved 为全部失败数）
+    lastAttemptAt: datetime  # 最近一次尝试（本地时区）
+    canRecommend: bool  # 该平台是否具备题单能力（决定展开箭头是否出现）
+
+
+class ReviewOut(BaseModel):
+    items: list[ReviewItemOut]
+    bound: bool  # 当前组是否绑定了任何账号（区分空态）
+    synced: bool  # 是否至少有一个账号同步成功过
+
+
 # ===== 浏览器一键登录（cookie 平台） =====
 
 BrowserLoginStateOut = Literal["waiting", "success", "canceled", "timeout", "error"]

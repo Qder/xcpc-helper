@@ -719,3 +719,57 @@ async def test_refine_stopped_total_reflects_remaining(service: ActivityService)
     assert st.state == "stopped"
     assert st.total == 2  # 剩余 2 条（第 1 条已精化）
     assert st.done == 1
+
+
+# ===== 错题本（review） =====
+
+
+async def test_review_empty_group(service: ActivityService):
+    """未绑定任何账号：空列表 + bound=False，不报错。"""
+    out = service.review_list(None, "all")
+    assert out.items == []
+    assert out.bound is False
+    assert out.synced is False
+
+
+async def test_review_lists_unsolved_after_sync(service: ActivityService):
+    """夹具里 2245B 只有一次 WA（从未 AC）→ 未通过；2245D 只有 JG → 不计。"""
+    await service.bind(BindIn(platform="codeforces", handle="demo"))
+    await wait_sync_done(service)
+
+    out = service.review_list(None, "all")
+    assert out.bound is True
+    assert out.synced is True
+    assert [i.problemKey for i in out.items] == ["2245B"]
+    item = out.items[0]
+    assert item.status == "unsolved"
+    assert item.failCount == 1
+    assert item.canRecommend is False  # 本阶段尚未接入题单能力
+
+
+async def test_review_status_filter(service: ActivityService):
+    await service.bind(BindIn(platform="codeforces", handle="demo"))
+    await wait_sync_done(service)
+
+    assert [i.problemKey for i in service.review_list(None, "unsolved").items] == [
+        "2245B"
+    ]
+    assert service.review_list(None, "struggled").items == []
+
+
+async def test_review_rejects_unknown_status(service: ActivityService):
+    with pytest.raises(BadRequestError):
+        service.review_list(None, "wat")
+
+
+async def test_review_rejects_unknown_platform(service: ActivityService):
+    with pytest.raises(BadRequestError):
+        service.review_list("unknown-platform", "all")
+
+
+async def test_review_platform_filter(service: ActivityService):
+    await service.bind(BindIn(platform="codeforces", handle="demo"))
+    await wait_sync_done(service)
+
+    assert len(service.review_list("codeforces", "all").items) == 1
+    assert service.review_list("atcoder", "all").items == []
