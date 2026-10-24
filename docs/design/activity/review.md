@@ -15,7 +15,9 @@
 
 - 事实来源仍是 `data/user/<userid>/activity/submissions/*.jsonl`，不新增采集、
   不改提交结构；
-- 只读聚合，不做写操作，因此不涉及原子写与并发写约定；
+- 提交聚合是只读的（不写提交数据）；手动收录是唯一写操作，单独落盘在
+  `activity/review-manual.json`（原子写沿用 `UserStore` 的临时文件 + `os.replace`），
+  与提交数据互不影响；
 - 「同类推荐」目前支持 Codeforces（全量题单）与牛客竞赛（题库定点查询）；
   其余平台只列错题、不展示推荐入口——是否支持由 adapter 是否声明
   `PROBLEMSET` / `PROBLEM_LOOKUP` 决定，前端不硬编码平台清单。
@@ -400,6 +402,19 @@ key = (-共同标签数, 难度差绝对值, problem_key)   # 升序取前 5
 | `frontend/src/app/nav.ts` / `router.ts` | 新增子页与路由 `/activity/review` |
 
 不引入新依赖；列表沿用现有卡片样式，标签用 `NTag`。
+
+### 实现状态（第三期已完成）
+
+- 后端：`TagMeta` 与 `list_problem_tags()` / `search_problems()` / `parse_problem_url()`
+  已进 `PlatformAdapter` 基类；CF 用题单缓存汇总标签与本地过滤分页，牛客走
+  `knowledge/catalog` + `problem/list/json`，洛谷走 `/_lfe/tags` + `/problem/list`。
+  洛谷父标签名带 BOM（`\ufeff基础算法`），`list_problem_tags()` 已 trim 后再返回。
+- 接口：`POST` / `DELETE /api/activity/review/manual`、`GET /api/activity/review/tags`、
+  `GET /api/activity/review/search` 已上线（`/search` 每页 50，`hasMore` 按本页是否
+  满判定，不依赖平台总数）。
+- 前端：收录区、按算法查找面板、`collected` 状态筛选与删除均已落地；收录成功后
+  本地并入列表（不整页刷新）；当前平台筛选与「未通过 / 挣扎题」筛选下不插入不匹配的
+  条目。
 
 ## 6. 验证方式
 
