@@ -1,10 +1,11 @@
-"""ActivityService 门面测试：绑定/换绑/解绑、同步触发、聚合读取（MockTransport 注入）。"""
+﻿"""ActivityService 门面测试：绑定/换绑/解绑、同步触发、聚合读取（MockTransport 注入）。"""
 
 import asyncio
 import json
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -13,6 +14,7 @@ from adapters.base import (
     BrowserLoginCancelledError,
     Credentials,
     PlatformError,
+    ProblemMeta,
     SyncBatch,
     UserInfo,
     Verdict,
@@ -25,6 +27,7 @@ from core.exceptions import (
     ConflictError,
     NotFoundError,
 )
+from modules.activity import problemset
 from modules.activity.models import Account, Submission
 from modules.activity.schemas import (
     BindIn,
@@ -965,8 +968,11 @@ def make_lookup_handler(
     *,
     problem_list_body: str | None = None,
     on_problem_list=None,
+    problem_json_body: str | None = None,
+    on_problem_json=None,
+    knowledge_body: str | None = None,
 ):
-    """牛客 handler：rating-history / practice-coding / 题库列表。"""
+    """牛客 handler：rating-history / practice-coding / 题库 HTML+JSON / 知识点目录。"""
 
     async def handler(request: httpx.Request) -> httpx.Response:
         path = request.url.path
@@ -982,6 +988,16 @@ def make_lookup_handler(
             if problem_list_body is None:
                 return httpx.Response(503)
             return httpx.Response(200, text=problem_list_body)
+        if path.endswith("/acm/problem/list/json"):
+            if on_problem_json is not None:
+                on_problem_json(dict(request.url.params))
+            if problem_json_body is None:
+                return httpx.Response(503)
+            return httpx.Response(200, text=problem_json_body)
+        if path.endswith("/acm/problem/knowledge/catalog"):
+            if knowledge_body is None:
+                return httpx.Response(503)
+            return httpx.Response(200, text=knowledge_body)
         if "/acm/contest/profile/" in path:
             return httpx.Response(200, text="<html><title>demo的比赛主页</title></html>")
         return httpx.Response(404)
@@ -1388,3 +1404,265 @@ async def test_manual_item_stored_on_disk(tmp_path):
         assert payload["items"][0]["problem_key"] == "2245F"
     finally:
         await svc.aclose()
+
+
+# ===== 按算法查找（标签目录 + 按标签搜题） =====
+
+
+def make_tags_cache() -> problemset.CachedProblemset:
+    """CF 题单缓存替身：dp/math 各 2 题，用来验证标签汇总与本地过滤。"""
+    return problemset.CachedProblemset(
+        items=[
+            ProblemMeta(problem_key="1A", name="a", tags=["dp", "math"]),
+            ProblemMeta(problem_key="1B", name="b", tags=["dp"]),
+            ProblemMeta(problem_key="1C", name="c", tags=["math"]),
+        ],
+        fetched_at=int(time.time()),
+        stale=False,
+    )
+
+
+async def test_review_tags_from_problemset_cache(tmp_path):
+    """CF 走题单缓存汇总标签：按出现次数降序，id 用标签文本（CF 无主键）。"""
+    svc = make_manual_service(tmp_path)
+    try:
+        svc._problemset = AsyncMock(return_value=make_tags_cache())  # type: ignore[method-assign]
+
+        out = await svc.review_tags("codeforces")
+        names = [t.name for t in out.items]
+        # dp:2、math:2；同次数按名称升序，结果稳定
+        assert names == ["dp", "math"]
+        assert all(t.id == t.name for t in out.items)
+        assert out.items[0].count == 2
+    finally:
+        await svc.aclose()
+
+
+async def test_review_tags_unknown_platform(tmp_path):
+    svc = make_manual_service(tmp_path)
+    try:
+        with pytest.raises(BadRequestError):
+            await svc.review_tags("unknown-platform")
+    finally:
+        await svc.aclose()
+
+
+async def test_review_tags_platform_without_capability(tmp_path):
+    """既无 PROBLEMSET 也无 PROBLEM_LOOKUP 的平台（AtCoder）→ 400。"""
+    svc = make_manual_service(tmp_path)
+    try:
+        with pytest.raises(BadRequestError):
+            await svc.review_tags("atcoder")
+    finally:
+        await svc.aclose()
+
+
+def make_dp_cache(count: int = 60) -> problemset.CachedProblemset:
+    """构造 count 道 dp 题 + 1 道 math 题，用于验证本地过滤与分页。"""
+    items = [
+        ProblemMeta(problem_key=f"100{i}A", name=f"p{i}", tags=["dp"])
+        for i in range(count)
+    ]
+    items.append(ProblemMeta(problem_key="999X", name="other", tags=["math"]))
+    return problemset.CachedProblemset(
+        items=items, fetched_at=int(time.time()), stale=False
+    )
+
+
+async def test_review_search_from_problemset_cache(tmp_path):
+    """CF 搜题在缓存内本地过滤 + 分页，并标注 solved（不产生网络请求）。"""
+    svc = make_manual_service(tmp_path)
+    try:
+        svc._problemset = AsyncMock(return_value=make_dp_cache())  # type: ignore[method-assign]
+        store = svc._store()
+        store.save_account(Account(platform="codeforces", handle="demo"))
+        store.merge_submissions(
+            "codeforces",
+            "demo",
+            [
+                Submission(
+                    platform="codeforces",
+                    handle="demo",
+                    submission_id="1",
+                    problem_key="1000A",
+                    problem_name="p0",
+                    problem_url="",
+                    verdict=Verdict.AC,
+                    submitted_at=int(time.time()),
+                    language="GNU C++17",
+                )
+            ],
+        )
+
+        page1 = await svc.review_search("codeforces", "dp", 1)
+        assert len(page1.items) == 50
+        assert page1.hasMore is True
+        assert page1.items[0].solved is True  # 1000A 已 AC
+        assert page1.items[1].solved is False
+        assert all(i.problemKey != "999X" for i in page1.items)
+
+        page2 = await svc.review_search("codeforces", "dp", 2)
+        assert len(page2.items) == 10
+        assert page2.hasMore is False
+        assert all(i.problemKey != "999X" for i in page2.items)
+    finally:
+        await svc.aclose()
+
+
+async def test_review_search_rejects_bad_page(tmp_path):
+    svc = make_manual_service(tmp_path)
+    try:
+        with pytest.raises(BadRequestError):
+            await svc.review_search("codeforces", "dp", 0)
+    finally:
+        await svc.aclose()
+
+
+async def test_review_search_marks_collected(tmp_path):
+    """已在手动清单里的题标 collected，前端据此禁用收录按钮。"""
+    svc = make_manual_service(tmp_path)
+    try:
+        svc._problemset = AsyncMock(  # type: ignore[method-assign]
+            return_value=problemset.CachedProblemset(
+                items=[ProblemMeta(problem_key="1000A", name="p0", tags=["dp"])],
+                fetched_at=int(time.time()),
+                stale=False,
+            )
+        )
+        await svc.add_manual_review(
+            ManualReviewIn(platform="codeforces", problemKey="1000A")
+        )
+
+        out = await svc.review_search("codeforces", "dp", 1)
+        assert out.items[0].collected is True
+    finally:
+        await svc.aclose()
+
+
+async def test_review_search_cache_unavailable_returns_empty(tmp_path):
+    """题单缓存拉不到（离线/平台故障）→ 空页，不抛错（面板给空态即可）。"""
+    svc = make_manual_service(tmp_path, lambda r: httpx.Response(503))
+    try:
+        out = await svc.review_search("codeforces", "dp", 1)
+        assert out.items == []
+        assert out.hasMore is False
+    finally:
+        await svc.aclose()
+
+
+# ===== 按算法查找：牛客 / 洛谷（能力驱动，不判平台） =====
+
+NC_KNOWLEDGE_CATALOG = json.dumps(
+    {
+        "msg": "OK",
+        "code": 0,
+        "data": {
+            "groupCount": 1,
+            "groups": [
+                {
+                    "id": 145412,
+                    "name": "数论",
+                    "hidden": False,
+                    "childTags": [
+                        {
+                            "groupName": "数论",
+                            "name": "费马小定理",
+                            "id": 14424,
+                            "totalCount": 20,
+                        }
+                    ],
+                }
+            ],
+        },
+    },
+    ensure_ascii=False,
+)
+
+NC_PROBLEM_JSON = json.dumps(
+    {
+        "msg": "OK",
+        "code": 0,
+        "data": {
+            "problemCount": 20,
+            "problemSets": [
+                {
+                    "problemId": 274704,
+                    "showId": "NC274704",
+                    "name": "祥子拆团",
+                    "difficulty": 2100,
+                    "tagList": [{"id": 14424, "name": "费马小定理"}],
+                }
+            ],
+        },
+    },
+    ensure_ascii=False,
+)
+
+
+async def test_nowcoder_review_tags_from_catalog(tmp_path):
+    """牛客标签目录直达 knowledge/catalog（group 取自 groupName）。"""
+    svc = await make_lookup_service(
+        tmp_path,
+        make_lookup_handler([], knowledge_body=NC_KNOWLEDGE_CATALOG),
+    )
+    try:
+        out = await svc.review_tags("nowcoder")
+        assert [t.id for t in out.items] == ["14424"]
+        assert out.items[0].name == "费马小定理"
+        assert out.items[0].group == "数论"
+        assert out.items[0].count == 20
+    finally:
+        await svc.aclose()
+
+
+async def test_nowcoder_review_search_marks_states(tmp_path):
+    """牛客搜题走 list/json，并用本地数据标注 solved / collected。"""
+    seen: list[dict] = []
+    svc = await make_lookup_service(
+        tmp_path,
+        make_lookup_handler(
+            [],
+            problem_json_body=NC_PROBLEM_JSON,
+            on_problem_json=seen.append,
+        ),
+    )
+    try:
+        store = svc._store()
+        store.save_account(Account(platform="nowcoder", handle="demo"))
+        store.merge_submissions(
+            "nowcoder",
+            "demo",
+            [
+                Submission(
+                    platform="nowcoder",
+                    handle="demo",
+                    submission_id="1",
+                    problem_key="274704",
+                    problem_name="祥子拆团",
+                    problem_url="",
+                    verdict=Verdict.AC,
+                    submitted_at=int(time.time()),
+                    language="C++",
+                )
+            ],
+        )
+
+        out = await svc.review_search("nowcoder", "14424", 1)
+        assert seen[0]["tagId"] == "14424"
+        assert out.items[0].problemKey == "274704"
+        assert out.items[0].solved is True
+        assert out.items[0].collected is False
+        assert out.hasMore is False  # 本页 1 条 < 50
+    finally:
+        await svc.aclose()
+
+
+async def test_review_search_unknown_capability_platform(tmp_path):
+    """AtCoder 无题单/查询能力 → 400（前端按能力隐藏入口）。"""
+    svc = make_manual_service(tmp_path)
+    try:
+        with pytest.raises(BadRequestError):
+            await svc.review_search("atcoder", "dp", 1)
+    finally:
+        await svc.aclose()
+

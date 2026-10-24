@@ -19,12 +19,14 @@ from modules.activity.schemas import (
     ManualReviewOut,
     OverviewOut,
     PlatformsOut,
+    ProblemTagsOut,
     ProfileOut,
     ProfileUpdateIn,
     RecommendOut,
     RefineConfigIn,
     RefineStatusOut,
     ReviewOut,
+    SearchProblemsOut,
     SubmissionsOut,
     SyncIn,
     UpdateCredentialsIn,
@@ -219,6 +221,26 @@ async def delete_manual_review(
 ) -> None:
     """删除手动收录项（不存在 404；不影响提交聚合出的记录）。"""
     service.remove_manual_review(platform, problemKey)
+
+
+@router.get("/review/tags", response_model=ProblemTagsOut)
+async def get_review_tags(
+    service: ServiceDep,
+    platform: Annotated[str, Query()],
+) -> ProblemTagsOut:
+    """该平台的算法标签目录（按算法查找的筛选项）。"""
+    return await service.review_tags(platform)
+
+
+@router.get("/review/search", response_model=SearchProblemsOut)
+async def get_review_search(
+    service: ServiceDep,
+    platform: Annotated[str, Query()],
+    tag: Annotated[str, Query()],
+    page: Annotated[int, Query(ge=1)] = 1,
+) -> SearchProblemsOut:
+    """按算法标签浏览题库一页，并标注已通过 / 已收录。"""
+    return await service.review_search(platform, tag, page)
 
 
 @router.post("/sync", status_code=202)

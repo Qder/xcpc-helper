@@ -175,6 +175,41 @@ class ManualReviewOut(BaseModel):
     created: bool
 
 
+class ProblemTagOut(BaseModel):
+    """算法标签（按算法查找的筛选项）。"""
+
+    id: str
+    name: str
+    group: str = ""
+    count: int | None = None
+
+
+class ProblemTagsOut(BaseModel):
+    items: list[ProblemTagOut]
+
+
+class SearchProblemOut(BaseModel):
+    """按算法搜题结果的一行。
+
+    solved / collected 由 service 用本地数据算出，前端据此禁用按钮，
+    避免前端再拉两份状态（多一次请求 + 可能不一致）。
+    """
+
+    problemKey: str
+    name: str
+    rating: int | None = None
+    tags: list[str]
+    url: str
+    solved: bool = False  # 该题在提交里已 AC
+    collected: bool = False  # 该题已在手动收录清单里
+
+
+class SearchProblemsOut(BaseModel):
+    items: list[SearchProblemOut]
+    page: int
+    hasMore: bool  # 是否还有下一页（按「本页是否满」判断，不依赖平台总数）
+
+
 # ===== 浏览器一键登录（cookie 平台） =====
 
 BrowserLoginStateOut = Literal["waiting", "success", "canceled", "timeout", "error"]

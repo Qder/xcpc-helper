@@ -12,6 +12,7 @@ adapter 只允许被本服务与 modules/activity/sync.py 触碰。
 import asyncio
 import logging
 import time
+from collections import Counter
 from datetime import datetime, tzinfo
 
 from adapters import REGISTRY, HttpFetcher
@@ -24,6 +25,7 @@ from adapters.base import (
     PlatformAdapter,
     PlatformError,
     ProblemMeta,
+    TagMeta,
     UserNotFoundError,
     Verdict,
 )
@@ -58,6 +60,8 @@ from modules.activity.schemas import (
     OverviewTotalsOut,
     PlatformMetaOut,
     PlatformsOut,
+    ProblemTagOut,
+    ProblemTagsOut,
     ProfileOut,
     ProfileUpdateIn,
     RecommendEmptyReason,
@@ -66,6 +70,8 @@ from modules.activity.schemas import (
     RefineStatusOut,
     ReviewItemOut,
     ReviewOut,
+    SearchProblemOut,
+    SearchProblemsOut,
     SubmissionOut,
     SubmissionsOut,
     VerifyIn,
@@ -811,6 +817,84 @@ class ActivityService:
             items=items,
             fetched_at=int(time.time()),
             stale=False,
+        )
+
+    # ===== 按算法查找（标签目录 + 按标签搜题） =====
+
+    async def review_tags(self, platform: str) -> ProblemTagsOut:
+        """算法标签目录：CF 从题单缓存汇总，牛客/洛谷查平台端点。
+
+        CF 没有数字主键，用标签文本当 id；按出现次数降序，常用的排前面。
+        """
+        adapter = self._adapter(platform)
+        if Capability.PROBLEM_LOOKUP in adapter.capabilities:
+            tags = await adapter.list_problem_tags()
+        elif Capability.PROBLEMSET in adapter.capabilities:
+            cached = await self._problemset(platform)
+            tags = self._tags_from_set(cached.items if cached else [])
+        else:
+            raise BadRequestError(f"平台 {platform} 不支持按算法查找")
+        return ProblemTagsOut(
+            items=[
+                ProblemTagOut(id=t.id, name=t.name, group=t.group, count=t.count)
+                for t in tags
+            ]
+        )
+
+    @staticmethod
+    def _tags_from_set(items: list[ProblemMeta]) -> list[TagMeta]:
+        """从题单汇总标签：按出现次数降序，同次数按名称升序（结果稳定）。"""
+        counter: Counter[str] = Counter()
+        for meta in items:
+            counter.update(meta.tags)
+        return [
+            TagMeta(id=name, name=name, count=count)
+            for name, count in sorted(counter.items(), key=lambda kv: (-kv[1], kv[0]))
+        ]
+
+    async def review_search(
+        self, platform: str, tag: str, page: int
+    ) -> SearchProblemsOut:
+        """按算法标签浏览一页题目，并标注 solved / collected（本地数据）。"""
+        if page < 1:
+            raise BadRequestError("页码必须从 1 开始")
+        adapter = self._adapter(platform)
+        page_size = REVIEW_SEARCH_PAGE_SIZE
+        if Capability.PROBLEM_LOOKUP in adapter.capabilities:
+            metas = await adapter.search_problems(tag, page=page)
+        elif Capability.PROBLEMSET in adapter.capabilities:
+            cached = await self._problemset(platform)
+            if cached is None:
+                return SearchProblemsOut(items=[], page=page, hasMore=False)
+            matched = [p for p in cached.items if tag in p.tags]
+            start = (page - 1) * page_size
+            metas = matched[start : start + page_size]
+        else:
+            raise BadRequestError(f"平台 {platform} 不支持按算法查找")
+
+        submissions = self._submissions(platform)
+        solved = {s.problem_key for s in submissions if s.verdict == Verdict.AC}
+        collected = {
+            m.problem_key
+            for m in self._store().load_manual_review()
+            if m.platform == platform
+        }
+        return SearchProblemsOut(
+            items=[
+                SearchProblemOut(
+                    problemKey=m.problem_key,
+                    name=m.name,
+                    rating=m.rating,
+                    tags=list(m.tags),
+                    url=m.url,
+                    solved=m.problem_key in solved,
+                    collected=m.problem_key in collected,
+                )
+                for m in metas
+            ],
+            page=page,
+            # 末页判定：本页未满即到底（平台分页能力差异大，不依赖总数）
+            hasMore=len(metas) >= page_size,
         )
 
     def submissions(
