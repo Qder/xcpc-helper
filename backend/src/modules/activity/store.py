@@ -44,6 +44,36 @@ TODO_FILE = Path("activity") / "review-todo.json"  # 待办清单（精选，用
 EXAMPLE_GROUP = "example"
 
 
+def _upsert_todo(items: list[TodoItem], item: TodoItem) -> tuple[TodoItem, bool]:
+    """把一条待办并入 items（原地），返回 (落盘条目, 是否新建)。
+
+    幂等语义集中在这里，add_todo 与 add_todos 共用，避免两条路径漂移：
+    - 已存在同 (platform, problem_key) 时只刷新画像字段，**保留首次 added_at**；
+    - 标签是快照：本次查到了就更新，查不到保留旧的（离线加入不该清空花片）；
+    - 新建时追加到末尾（列表展示不依赖文件顺序，按 added_at 排序）。
+    """
+    for i, existing in enumerate(items):
+        if (
+            existing.platform == item.platform
+            and existing.problem_key == item.problem_key
+        ):
+            items[i] = existing.model_copy(
+                update={
+                    "problem_name": item.problem_name or existing.problem_name,
+                    "problem_url": item.problem_url or existing.problem_url,
+                    "difficulty": (
+                        item.difficulty
+                        if item.difficulty is not None
+                        else existing.difficulty
+                    ),
+                    "tags": item.tags or existing.tags,
+                }
+            )
+            return items[i], False
+    items.append(item)
+    return item, True
+
+
 def _atomic_write(path: Path, text: str) -> None:
     """原子写入文本文件：先写同目录临时文件，再 os.replace 覆盖目标。"""
     fd, tmp = tempfile.mkstemp(prefix=".tmp-", dir=path.parent)
@@ -436,30 +466,22 @@ class UserStore:
         """
         with self._lock:
             items = self.load_todo()
-            for i, existing in enumerate(items):
-                if (
-                    existing.platform == item.platform
-                    and existing.problem_key == item.problem_key
-                ):
-                    items[i] = existing.model_copy(
-                        update={
-                            "problem_name": item.problem_name or existing.problem_name,
-                            "problem_url": item.problem_url or existing.problem_url,
-                            "difficulty": (
-                                item.difficulty
-                                if item.difficulty is not None
-                                else existing.difficulty
-                            ),
-                            # 标签是快照：本次查到了就更新，查不到保留旧的
-                            # （离线加入不该把已有花片清空）
-                            "tags": item.tags or existing.tags,
-                        }
-                    )
-                    self.save_todo(items)
-                    return items[i], False
-            items.append(item)
+            saved, created = _upsert_todo(items, item)
             self.save_todo(items)
-            return item, True
+            return saved, created
+
+    def add_todos(self, batch: list[TodoItem]) -> list[tuple[TodoItem, bool]]:
+        """批量加入待办（一次落盘），返回与入参等长的 (条目, 是否新建) 列表。
+
+        批量导入逐条调用 add_todo 会重写文件 N 次；这里在一个锁内合并后只写
+        一次。语义与 add_todo 完全一致（幂等、模板字段刷新、added_at 保留）。
+        """
+        with self._lock:
+            items = self.load_todo()
+            out = [_upsert_todo(items, item) for item in batch]
+            if batch:
+                self.save_todo(items)
+            return out
 
     def remove_todo(self, platform: str, problem_key: str) -> bool:
         """删除一条待办；返回是否删到（False 由调用方转 404）。"""

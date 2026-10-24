@@ -77,6 +77,10 @@ from modules.activity.schemas import (
     SubmissionOut,
     SubmissionsOut,
     TodoAddOut,
+    TodoBatchIn,
+    TodoBatchItemIn,
+    TodoBatchOut,
+    TodoBatchSkipOut,
     TodoIn,
     TodoItemOut,
     TodoOut,
@@ -97,6 +101,10 @@ AVATAR_MAX_CHARS = 500_000
 PENDING_CREDENTIALS_TTL = 600.0
 # browser-login 用户登录操作超时（秒）
 BROWSER_LOGIN_TIMEOUT = 180.0
+# 批量导入待办的补全预算（秒）：预算内逐条查画像与标签，超出的条目用前端
+# 带来的画像快照直接落盘。勾 50 道题时逐条查询会被平台限流拖成几分钟，
+# 前端只该等一个可接受的时间。
+TODO_BATCH_ENRICH_BUDGET = 20.0
 # 按算法搜题每页条数（与平台题库页 pageSize 对齐，末页按「本页是否满」判定）
 REVIEW_SEARCH_PAGE_SIZE = 50
 
@@ -735,17 +743,7 @@ class ActivityService:
         if (platform, key) in review.solved_keys(submissions):
             raise BadRequestError("该题已 AC，不需要加入待办")
 
-        meta = await self._fetch_problem_quietly(adapter, key)
-        item = TodoItem(
-            platform=platform,
-            problem_key=key,
-            problem_name=(meta.name if meta else "") or key,
-            problem_url=(meta.url if meta else "")
-            or self._fallback_problem_url(platform, key),
-            difficulty=meta.rating if meta else None,
-            tags=await self._todo_tags(adapter, meta),
-            added_at=int(time.time()),
-        )
+        item = await self._build_todo_item(platform, key, adapter)
         store = self._store()
         saved, created = store.add_todo(item)
         return TodoAddOut(
@@ -753,27 +751,152 @@ class ActivityService:
             created=created,
         )
 
+    async def _build_todo_item(
+        self,
+        platform: str,
+        key: str,
+        adapter: PlatformAdapter,
+        *,
+        entry: TodoBatchItemIn | None = None,
+        enrich: bool = True,
+        tag_catalogs: dict[str, dict[str, str]] | None = None,
+    ) -> TodoItem:
+        """组装待办条目（单条与批量共用同一条路径）。
+
+        enrich=False 时跳过平台查询，只用前端带上来的画像快照（若有）：
+        批量导入勾了几十道题时，逐题查画像会被平台限流拖成几分钟，宁可
+        让新条目暂时缺标签，也不该让用户在界面上干等。
+
+        画像优先级：平台画像（权威）> 前端快照 > 题号兜底。
+        """
+        meta = await self._fetch_problem_quietly(adapter, key) if enrich else None
+        snapshot_name = (entry.problemName or "").strip() if entry else ""
+        snapshot_url = (entry.problemUrl or "").strip() if entry else ""
+        return TodoItem(
+            platform=platform,
+            problem_key=key,
+            problem_name=(meta.name if meta else "") or snapshot_name or key,
+            problem_url=(meta.url if meta else "")
+            or snapshot_url
+            or self._fallback_problem_url(platform, key),
+            difficulty=(
+                meta.rating
+                if meta is not None and meta.rating is not None
+                else (entry.difficulty if entry else None)
+            ),
+            tags=await self._todo_tags(adapter, meta, catalogs=tag_catalogs),
+            added_at=int(time.time()),
+        )
+
+    async def add_todos(self, payload: TodoBatchIn) -> TodoBatchOut:
+        """批量加入待办（错题本多选导入）。
+
+        与单条 add_todo 的差别，都是为了「批量」这个场景本身：
+        - **跳过而不是整批失败**：已 AC 的题跳过（不该进待办），已在待办里的也
+          跳过（幂等命中，不算新增），逐项记进 skipped 供前端提示；
+        - **一次落盘**：逐条调 add_todo 会重写 review-todo.json N 次；
+        - **补全有时间预算**（TODO_BATCH_ENRICH_BUDGET）：逐条 await 才不绕过各
+          平台「上一次请求时刻」的限流记账，但勾 50 道题时逐条查询会被限流拖成
+          几分钟；因此只在预算内补画像与标签，超预算的条目直接用前端带来的快照
+          落盘（题名/外链/难度照旧正确，只是缺标签花片）。
+        - 标签字典按平台缓存一次（洛谷每题都要查同一份字典，不缓存就白等 N 次）。
+
+        请求内重复的 (platform, problemKey) 由入参去重，避免同一条被算两次。
+        """
+        if not payload.items:
+            raise BadRequestError("请选择要加入待办的题目")
+
+        submissions = self._submissions(None)
+        solved = review.solved_keys(submissions)
+        existing = {
+            (it.platform, it.problem_key) for it in self._store().load_todo()
+        }
+
+        skipped: list[TodoBatchSkipOut] = []
+        built: list[TodoItem] = []
+        seen: set[tuple[str, str]] = set()
+        deadline = time.monotonic() + TODO_BATCH_ENRICH_BUDGET
+        tag_catalogs: dict[str, dict[str, str]] = {}
+        for entry in payload.items:
+            platform = entry.platform.strip()
+            key = (entry.problemKey or "").strip()
+            if not key:
+                raise BadRequestError("题号不能为空")
+            adapter = self._adapter(platform)  # 平台不存在 → 400
+            identity = (platform, key)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            if identity in solved:
+                skipped.append(
+                    TodoBatchSkipOut(platform=platform, problemKey=key, reason="ac")
+                )
+                continue
+            if identity in existing:
+                skipped.append(
+                    TodoBatchSkipOut(
+                        platform=platform, problemKey=key, reason="exists"
+                    )
+                )
+                continue
+            built.append(
+                await self._build_todo_item(
+                    platform,
+                    key,
+                    adapter,
+                    entry=entry,
+                    enrich=time.monotonic() < deadline,
+                    tag_catalogs=tag_catalogs,
+                )
+            )
+
+        status_map = self._todo_status_map(submissions)
+        saved = self._store().add_todos(built)
+        return TodoBatchOut(
+            added=[
+                self._todo_to_out(item, status_map) for item, created in saved if created
+            ],
+            skipped=skipped,
+        )
+
     async def _todo_tags(
-        self, adapter: PlatformAdapter, meta: ProblemMeta | None
+        self,
+        adapter: PlatformAdapter,
+        meta: ProblemMeta | None,
+        *,
+        catalogs: dict[str, dict[str, str]] | None = None,
     ) -> list[str]:
-        """取出该题的标签文本快照（查不到就是空：待办不依赖标签成功）。"""
+        """取出该题的标签文本快照（查不到就是空：待办不依赖标签成功）。
+
+        catalogs 是批量导入用的按平台字典缓存（platform → {id: name}）；
+        传 None 表示一次性调用，查完即丢。字典拉取失败的平台缓存为空映射，
+        同批后续题目不再重试同一个注定失败的请求。
+        """
         if meta is None:
             return []
         if meta.tags:
             return list(meta.tags)
         if not meta.tag_ids:
             return []
-        # 洛谷等平台题目页只给标签主键，文本需查平台的标签字典
-        try:
-            catalog = await adapter.list_problem_tags()
-        except (PlatformError, AuthExpiredError) as exc:
-            logger.warning(
-                "标签目录获取失败 [%s]：%s（待办仍可加入，只是无标签）",
-                adapter.platform_id,
-                exc,
-            )
-            return []
-        by_id = {t.id: t.name for t in catalog}
+        platform = adapter.platform_id
+        if catalogs is not None and platform in catalogs:
+            by_id = catalogs[platform]
+        else:
+            # 洛谷等平台题目页只给标签主键，文本需查平台的标签字典
+            try:
+                catalog = await adapter.list_problem_tags()
+            except (PlatformError, AuthExpiredError) as exc:
+                logger.warning(
+                    "标签目录获取失败 [%s]：%s（待办仍可加入，只是无标签）",
+                    platform,
+                    exc,
+                )
+                if catalogs is not None:
+                    catalogs[platform] = {}
+                return []
+            by_id = {t.id: t.name for t in catalog}
+            if catalogs is not None:
+                catalogs[platform] = by_id
         names = [by_id[tid] for tid in meta.tag_ids if tid in by_id]
         return list(dict.fromkeys(names))  # 去重且保持平台顺序
 

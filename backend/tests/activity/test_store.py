@@ -373,3 +373,31 @@ def test_todo_isolated_between_groups(tmp_path):
     UserStore(root, "a").add_todo(todo())
     assert UserStore(root, "b").load_todo() == []
 
+
+def test_add_todos_writes_once_and_keeps_semantics(tmp_path):
+    """批量加入只落盘一次；幂等/刷新画像/保留 added_at 与单条一致。"""
+    store = make_store(tmp_path)
+    store.add_todo(todo(key="2245F", added_at=1000))
+
+    renamed = todo(key="2245F", added_at=2000)
+    renamed.problem_name = "Renamed"
+    fresh = todo(key="2245G", added_at=3000)
+
+    out = store.add_todos([renamed, fresh])
+
+    # 返回与入参等长、顺序一致，created 如实反映新建与否
+    assert [(it.problem_key, created) for it, created in out] == [
+        ("2245F", False),
+        ("2245G", True),
+    ]
+    assert out[0][0].added_at == 1000  # 不把题顶到列表最前
+    assert out[0][0].problem_name == "Renamed"
+    assert {it.problem_key for it in store.load_todo()} == {"2245F", "2245G"}
+
+
+def test_add_todos_empty_batch_does_not_touch_file(tmp_path):
+    """空批次不落盘：不凭空造出一个空的 review-todo.json。"""
+    store = make_store(tmp_path)
+    assert store.add_todos([]) == []
+    assert not (tmp_path / "user" / "default" / "activity" / "review-todo.json").exists()
+

@@ -253,6 +253,46 @@ class TodoAddOut(BaseModel):
     created: bool
 
 
+class TodoBatchItemIn(BaseModel):
+    """批量导入的一项。
+
+    除定位字段外可携带错题本里已有的画像快照（题名/外链/难度）：批量场景下
+    前端手上就有这些值，传过来能省掉一次逐题画像请求，平台不可达时也不会
+    把题名退化成题号。缺省则回退到平台查询。
+    """
+
+    platform: str
+    problemKey: str
+    problemName: str | None = None
+    problemUrl: str | None = None
+    difficulty: int | str | None = None
+
+
+class TodoBatchIn(BaseModel):
+    """批量导入请求（错题本多选后一次提交）。"""
+
+    items: list[TodoBatchItemIn]
+
+
+# 批量导入的跳过原因：已 AC（不该进待办）/ 已在待办（幂等命中）
+TodoSkipReason = Literal["ac", "exists"]
+
+
+class TodoBatchSkipOut(BaseModel):
+    """被跳过的一项（批量导入不因个别项整批失败）。"""
+
+    platform: str
+    problemKey: str
+    reason: TodoSkipReason
+
+
+class TodoBatchOut(BaseModel):
+    """批量导入结果：added 为真正新建的条目，skipped 为跳过的项。"""
+
+    added: list[TodoItemOut]
+    skipped: list[TodoBatchSkipOut]
+
+
 
 # ===== 浏览器一键登录（cookie 平台） =====
 

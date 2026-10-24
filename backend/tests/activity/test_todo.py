@@ -15,7 +15,13 @@ from core.config import Settings
 from core.exceptions import BadRequestError, NotFoundError
 from modules.activity import problemset
 from modules.activity.models import Account, Submission, Verdict
-from modules.activity.schemas import ManualReviewIn, TodoIn
+from modules.activity.schemas import (
+    ManualReviewIn,
+    TodoBatchIn,
+    TodoBatchItemIn,
+    TodoIn,
+)
+from services.activity import service as service_module
 from services.activity.service import ActivityService
 
 
@@ -321,5 +327,226 @@ async def test_manual_review_marks_in_todo(tmp_path):
             ManualReviewIn(platform="codeforces", problemKey="1000A")
         )
         assert out.item.inTodo is True
+    finally:
+        await svc.aclose()
+
+
+# ===== 批量导入（错题本多选 → 待办） =====
+
+
+async def test_todo_batch_adds_and_snapshots_each(tmp_path):
+    """批量导入：每条都走一次画像快照，返回新建条目。"""
+    svc = make_todo_service(tmp_path)
+    cache_set(
+        svc,
+        [
+            ProblemMeta(problem_key="1000A", name="a", rating=1500, tags=["dp"]),
+            ProblemMeta(problem_key="1000B", name="b", rating=1600, tags=["math"]),
+        ],
+    )
+    try:
+        out = await svc.add_todos(
+            TodoBatchIn(
+                items=[
+                    TodoBatchItemIn(platform="codeforces", problemKey="1000A"),
+                    TodoBatchItemIn(platform="codeforces", problemKey="1000B"),
+                ]
+            )
+        )
+        assert [i.problemKey for i in out.added] == ["1000A", "1000B"]
+        assert [i.tags for i in out.added] == [["dp"], ["math"]]
+        assert out.skipped == []
+        assert len(svc._store().load_todo()) == 2
+    finally:
+        await svc.aclose()
+
+
+async def test_todo_batch_skips_ac_and_existing(tmp_path):
+    """已 AC / 已在待办逐项跳过并回报原因，其余照常加入（不整批失败）。"""
+    svc = make_todo_service(tmp_path)
+    cache_set(svc, [])
+    try:
+        await svc.add_todo(TodoIn(platform="codeforces", problemKey="1000B"))
+        add_submission(svc, "1000C", Verdict.AC)
+
+        out = await svc.add_todos(
+            TodoBatchIn(
+                items=[
+                    TodoBatchItemIn(platform="codeforces", problemKey="1000A"),
+                    TodoBatchItemIn(platform="codeforces", problemKey="1000B"),
+                    TodoBatchItemIn(platform="codeforces", problemKey="1000C"),
+                ]
+            )
+        )
+        assert [i.problemKey for i in out.added] == ["1000A"]
+        reasons = {(s.problemKey, s.reason) for s in out.skipped}
+        assert reasons == {("1000B", "exists"), ("1000C", "ac")}
+    finally:
+        await svc.aclose()
+
+
+async def test_todo_batch_dedupes_repeated_keys_in_request(tmp_path):
+    """请求内重复同一题只算一次（不重复查画像、不重复落盘）。"""
+    svc = make_todo_service(tmp_path)
+    cache_set(svc, [ProblemMeta(problem_key="1000A", name="a", tags=["dp"])])
+    try:
+        out = await svc.add_todos(
+            TodoBatchIn(
+                items=[
+                    TodoBatchItemIn(platform="codeforces", problemKey="1000A"),
+                    TodoBatchItemIn(platform="codeforces", problemKey="1000A"),
+                ]
+            )
+        )
+        assert [i.problemKey for i in out.added] == ["1000A"]
+        assert out.skipped == []
+        assert len(svc._store().load_todo()) == 1
+    finally:
+        await svc.aclose()
+
+
+async def test_todo_batch_survives_profile_failure(tmp_path):
+    """画像查不到（离线）仍可批量加入：题名退化题号、标签为空。"""
+    svc = make_todo_service(tmp_path)
+    try:
+        out = await svc.add_todos(
+            TodoBatchIn(
+                items=[TodoBatchItemIn(platform="codeforces", problemKey="2245F")]
+            )
+        )
+        assert out.added[0].problemName == "2245F"
+        assert out.added[0].tags == []
+    finally:
+        await svc.aclose()
+
+
+async def test_todo_batch_uses_snapshot_when_budget_exhausted(tmp_path):
+    """超预算不补画像：用前端快照落盘（题名/外链/难度照旧正确）。"""
+    svc = make_todo_service(tmp_path)
+    cache_set(svc, [])
+    try:
+        # 预算设为负值：等价于「第一道题就已经超时」
+        monkeypatch = pytest.MonkeyPatch()
+        monkeypatch.setattr(service_module, "TODO_BATCH_ENRICH_BUDGET", -1.0)
+        out = await svc.add_todos(
+            TodoBatchIn(
+                items=[
+                    TodoBatchItemIn(
+                        platform="codeforces",
+                        problemKey="2245F",
+                        problemName="Xor Minimization",
+                        problemUrl="https://codeforces.com/contest/2245/problem/F",
+                        difficulty=2100,
+                    )
+                ]
+            )
+        )
+        monkeypatch.undo()
+        assert out.added[0].problemName == "Xor Minimization"
+        assert out.added[0].problemUrl == (
+            "https://codeforces.com/contest/2245/problem/F"
+        )
+        assert out.added[0].difficulty == 2100
+        assert out.added[0].tags == []  # 没补标签，不假装有
+    finally:
+        await svc.aclose()
+
+
+async def test_todo_batch_platform_profile_wins_over_snapshot(tmp_path):
+    """平台画像比前端快照权威：查得到就用平台的题名与难度。"""
+    svc = make_todo_service(tmp_path)
+    cache_set(
+        svc, [ProblemMeta(problem_key="2245F", name="官方题名", rating=2100)]
+    )
+    try:
+        out = await svc.add_todos(
+            TodoBatchIn(
+                items=[
+                    TodoBatchItemIn(
+                        platform="codeforces",
+                        problemKey="2245F",
+                        problemName="前端旧快照",
+                        difficulty=1500,
+                    )
+                ]
+            )
+        )
+        assert out.added[0].problemName == "官方题名"
+        assert out.added[0].difficulty == 2100
+    finally:
+        await svc.aclose()
+
+
+async def test_todo_batch_falls_back_to_snapshot_without_profile(tmp_path):
+    """画像查不到时用前端快照，而不是把题名退化成题号。"""
+    svc = make_todo_service(tmp_path)
+    try:
+        out = await svc.add_todos(
+            TodoBatchIn(
+                items=[
+                    TodoBatchItemIn(
+                        platform="codeforces",
+                        problemKey="2245F",
+                        problemName="来自错题本",
+                        difficulty=1900,
+                    )
+                ]
+            )
+        )
+        assert out.added[0].problemName == "来自错题本"
+        assert out.added[0].difficulty == 1900
+    finally:
+        await svc.aclose()
+
+
+async def test_todo_batch_tag_catalog_fetched_once_per_platform(tmp_path):
+    """同批洛谷题只查一次标签字典（否则每题都白等一个限流间隔）。"""
+    calls = 0
+
+    class StubLuogu:
+        platform_id = "luogu"
+        capabilities = frozenset({Capability.PROBLEM_LOOKUP})
+
+        async def fetch_problem(self, problem_key: str) -> ProblemMeta:
+            return ProblemMeta(
+                problem_key=problem_key,
+                name=f"题 {problem_key}",
+                tags=[],
+                tag_ids=["1"],
+                url=f"https://www.luogu.com.cn/problem/{problem_key}",
+            )
+
+        async def list_problem_tags(self) -> list[TagMeta]:
+            nonlocal calls
+            calls += 1
+            return [TagMeta(id="1", name="模拟")]
+
+    svc = make_todo_service(tmp_path)
+    svc._adapters["luogu"] = StubLuogu()  # type: ignore[assignment]
+    try:
+        out = await svc.add_todos(
+            TodoBatchIn(
+                items=[
+                    TodoBatchItemIn(platform="luogu", problemKey="P1001"),
+                    TodoBatchItemIn(platform="luogu", problemKey="P1002"),
+                    TodoBatchItemIn(platform="luogu", problemKey="P1003"),
+                ]
+            )
+        )
+        assert calls == 1
+        assert [i.tags for i in out.added] == [["模拟"], ["模拟"], ["模拟"]]
+    finally:
+        await svc.aclose()
+
+
+async def test_todo_batch_rejects_empty_and_unknown_platform(tmp_path):
+    svc = make_todo_service(tmp_path)
+    try:
+        with pytest.raises(BadRequestError):
+            await svc.add_todos(TodoBatchIn(items=[]))
+        with pytest.raises(BadRequestError):
+            await svc.add_todos(
+                TodoBatchIn(items=[TodoBatchItemIn(platform="nope", problemKey="1")])
+            )
     finally:
         await svc.aclose()

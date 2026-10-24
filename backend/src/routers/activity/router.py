@@ -30,6 +30,8 @@ from modules.activity.schemas import (
     SubmissionsOut,
     SyncIn,
     TodoAddOut,
+    TodoBatchIn,
+    TodoBatchOut,
     TodoIn,
     TodoOut,
     UpdateCredentialsIn,
@@ -263,6 +265,12 @@ async def get_todo(
 async def post_todo(payload: TodoIn, service: ServiceDep) -> TodoAddOut:
     """加入待办：已 AC → 400；重复加入幂等（created=false）。"""
     return await service.add_todo(payload)
+
+
+@router.post("/todo/batch", response_model=TodoBatchOut)
+async def post_todo_batch(payload: TodoBatchIn, service: ServiceDep) -> TodoBatchOut:
+    """批量加入待办（错题本多选导入）：已 AC / 已在待办逐项跳过，不整批失败。"""
+    return await service.add_todos(payload)
 
 
 @router.delete("/todo", status_code=204)
