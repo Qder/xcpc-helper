@@ -1,6 +1,6 @@
 # 错题本与同类推荐（review）设计
 
-> 状态：设计中。完成后请更新 [README.md](../README.md) 索引中的状态。
+> 状态：已实现（第一期：Codeforces 推荐）。完成后请更新 [README.md](../README.md) 索引中的状态。
 > 公共约定见 [conventions.md](conventions.md)；需求优先级见 [../../requirements.md](../../requirements.md)。
 
 ## 1. 背景与目标
@@ -80,7 +80,7 @@ backend/data/cache/activity/problemset/<platform>.json
 
 ```json
 {
-  "fetched_at": 1761200000,
+  "fetchedAt": 1761200000,
   "items": [
     { "problem_key": "2245A", "name": "X Axis", "rating": 800,
       "tags": ["math", "sortings"],
@@ -90,12 +90,13 @@ backend/data/cache/activity/problemset/<platform>.json
 ```
 
 - 属于**缓存**而非事实来源：`backend/data/` 本就不入 git，可随时删除重建；
-  `.gitignore` 需补 `backend/data/cache/`（当前仅忽略 `*.db` 等）；
-- TTL 24 小时（`PROBLEMSET_TTL_SECONDS`）：过期只在**下一次推荐请求**时刷新，
-  不在启动时预拉，避免拖慢启动；
-- 刷新失败保留旧缓存并继续服务（带 `stale=true` 标记）；无旧缓存则推荐区报
-  不可用，错题本不受影响；
-- 原子写入沿用 `modules/activity/store.py` 的临时文件 + `os.replace` 模式。
+  `.gitignore` 已补 `backend/data/cache/`；
+- TTL 24 小时（`XCPC_ACTIVITY_PROBLEMSET_TTL_SECONDS`，默认 86400）：过期只在
+  **下一次推荐请求**时刷新，不在启动时预拉，避免拖慢启动；
+- 刷新失败保留旧缓存并继续服务（带 `stale=true` 标记）；无旧缓存则返回空推荐，
+  错题本不受影响；
+- 原子写入沿用 `modules/activity/store.py` 的临时文件 + `os.replace` 模式；
+- 单条记录损坏只跳过该条，不整体丢弃缓存。
 
 ### 3.3 不变量
 
@@ -144,11 +145,12 @@ backend/data/cache/activity/problemset/<platform>.json
 推荐打分（纯函数，便于测试）：
 
 ```python
-score = (共同标签数, -abs(rating - 源题rating), -abs(rating - 目标区间中心))
+key = (-共同标签数, 难度差绝对值, problem_key)   # 升序取前 5
 ```
 
 过滤链：至少 1 个共同 tag → rating 落在源题 `[rating-200, rating+100]`
-（源题无 rating 时只按 tag）→ 排除已 AC 与源题 → 取前 5。
+（源题无 rating 时只按 tag；候选无 rating 时保留但排在已知难度之后）→
+排除已 AC 与源题 → 取前 5。同分按 `problem_key` 升序，保证结果稳定。
 
 ### API
 
@@ -163,20 +165,20 @@ score = (共同标签数, -abs(rating - 源题rating), -abs(rating - 目标区�
 
 | 位置 | 内容 |
 | --- | --- |
-| `frontend/src/features/activity/api.ts` | `fetchReview()` / `fetchRecommend()` |
-| `frontend/src/features/activity/types.ts` | `ReviewItem` / `RecommendItem` |
-| `frontend/src/features/activity/ReviewPage.vue` | 页面：筛选 + 列表 + 展开推荐 |
-| `frontend/src/features/activity/components/ReviewList.vue` | 列表与展开区（推荐加载态、失败态） |
-| `frontend/src/features/activity/model/review.ts` | 纯函数：失败次数文案、相对时间、状态标签映射（配 vitest） |
+| `frontend/src/features/activity/api.ts` | `fetchReview()` / `fetchReviewRecommend()` |
+| `frontend/src/features/activity/types.ts` | `ReviewItem` / `RecommendItem` / `RecommendData` |
+| `frontend/src/features/activity/ReviewPage.vue` | 页面：平台与状态筛选 + 分页列表 |
+| `frontend/src/features/activity/components/ReviewList.vue` | 列表、分页与展开区（推荐加载态、失败态、缓存降级提示） |
+| `frontend/src/features/activity/model/review.ts` | 纯函数：失败次数文案、相对时间、状态标签映射、筛选（配 vitest） |
 | `frontend/src/app/nav.ts` / `router.ts` | 新增子页与路由 `/activity/review` |
 
-不引入新依赖；表格用 Naive UI `NDataTable` 或现有列表样式，标签用 `NTag`。
+不引入新依赖；列表沿用现有卡片样式，标签用 `NTag`。
 
 ## 6. 验证方式
 
 - 后端：`review.py` / `problemset.py` / 推荐打分的纯函数单测；service 层的
-  平台过滤、空态、能力缺失分支；adapter 的题单解析（fixture 覆盖 `result`
-  为对象、缺 tags、缺 rating）。
+  平台过滤、空态、能力缺失分支、缓存命中与刷新失败降级；adapter 的题单解析
+  （fixture 覆盖 `result` 为对象、缺 tags、缺 rating）。
 - 前端：`model/review.ts` 单测；`npm run typecheck`、`npm run test`、`npm run build`。
 - 手动走查：绑定一个 CF 账号 → 同步 → 错题本出现未通过/挣扎题 → 展开看到推荐 →
   断网后展开只报推荐不可用、列表正常。

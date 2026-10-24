@@ -71,7 +71,7 @@
 | LeetCode CN | 规划中 | GraphQL（路径已探明） | 待排期 |
 | 更多平台 | 待评估 | — | — |
 
-**错题本与同类推荐**（设计中，设计见 [design/activity/review.md](design/activity/review.md)）
+**错题本与同类推荐**（已实现，设计见 [design/activity/review.md](design/activity/review.md)）
 
 - 错题本：从已有提交聚合「未通过」（从未 AC）与「挣扎题」（首次 AC 前失败 ≥ 3 次），
   按平台筛选、按最近尝试时间排序；
