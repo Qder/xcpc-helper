@@ -141,9 +141,16 @@ class RecommendItemOut(BaseModel):
     url: str
 
 
+RecommendEmptyReason = Literal["not_indexed", "no_match"]
+
+
 class RecommendOut(BaseModel):
     items: list[RecommendItemOut]
     stale: bool = False  # true = 本次用的是过期缓存（刷新失败后的降级）
+    # 空结果的原因，供前端给准确提示（items 非空时为 None）：
+    #   not_indexed = 源题不在平台题库/题单里（如牛客比赛专属题），无从推荐；
+    #   no_match    = 源题在库内，但没有标签与难度相近的未做题。
+    reason: RecommendEmptyReason | None = None
 
 
 # ===== 浏览器一键登录（cookie 平台） =====

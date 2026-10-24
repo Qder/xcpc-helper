@@ -55,7 +55,8 @@ class Capability(str, Enum):
     RATING = "rating"  # rating 历史（后续增量，结构已预留）
     CONTESTS = "contests"  # 比赛信息（平台级，未来 contest 功能消费）
     REFINE_VERDICT = "refine_verdict"  # 单条提交细分结果精化（如洛谷 UNAC → 详情判定）
-    PROBLEMSET = "problemset"  # 平台题单（标签/难度），错题本同类推荐消费
+    PROBLEMSET = "problemset"  # 全量题单（一次拉全站，标签/难度），错题本同类推荐消费
+    PROBLEM_LOOKUP = "problem_lookup"  # 定点题目查询（按题号查画像 + 按标签难度查候选），推荐消费
 
 
 class AuthMode(str, Enum):
@@ -127,14 +128,19 @@ class ContestInfo(BaseModel):
 class ProblemMeta(BaseModel):
     """题单中的一道题（题目画像，无用户维度）。
 
-    仅供错题本同类推荐使用：tags 为平台原生标签（不跨平台归一），
+    仅供错题本同类推荐使用：tags 为平台原生标签文本（不跨平台归一），
     rating 为平台原始难度值（CF 为分值，缺难度平台为 None）。
+
+    tag_ids 是平台的标签主键（如牛客知识点的 data-id）。按标签筛选需要
+    主键而非文本时使用（牛客的 tagId 过滤只认主键）；没有主键的平台留空，
+    推荐逻辑退回按 tags 文本匹配。
     """
 
     problem_key: str  # 平台内题目标识（与 PlatformSubmission.problem_key 同口径）
     name: str
     rating: int | None = None
     tags: list[str] = Field(default_factory=list)
+    tag_ids: list[str] = Field(default_factory=list)
     url: str = ""
 
 
@@ -250,12 +256,36 @@ class PlatformAdapter:
         raise CapabilityNotSupportedError(f"{self.platform_id} 不支持比赛信息")
 
     async def fetch_problemset(self) -> list[ProblemMeta]:
-        """平台题单（标签 / 难度 / 外链，平台级数据，无 handle）。
+        """平台全量题单（标签 / 难度 / 外链，平台级数据，无 handle）。
 
-        错题本同类推荐消费；调用方负责缓存与 TTL（不在此层做产品策略）。
+        适用于能一次拉全站的平台（CF 的 problemset.problems）。
+        调用方负责缓存与 TTL（不在此层做产品策略）。
         仅具备 PROBLEMSET 能力时实现。
         """
         raise CapabilityNotSupportedError(f"{self.platform_id} 不支持题单")
+
+    async def fetch_problem(self, problem_key: str) -> ProblemMeta | None:
+        """按题号查单题画像（标签 / 难度 / 外链）。
+
+        适用于无法全量拉取、但支持定点查询的平台（牛客题库列表页）。
+        查不到返回 None（题目不存在或尚未收录），不抛错。
+        仅具备 PROBLEM_LOOKUP 能力时实现。
+        """
+        raise CapabilityNotSupportedError(f"{self.platform_id} 不支持题目查询")
+
+    async def find_similar_problems(
+        self,
+        target: ProblemMeta,
+        *,
+        limit: int,
+    ) -> list[ProblemMeta]:
+        """按源题画像找同标签、难度相近的候选（未做排除，由调用方统一打分）。
+
+        平台若支持服务端按标签/难度过滤（牛客），在此利用以减少请求量与
+        候选规模；返回的有序候选由 review.recommend_problems 统一过滤排序。
+        仅具备 PROBLEM_LOOKUP 能力时实现。
+        """
+        raise CapabilityNotSupportedError(f"{self.platform_id} 不支持题目查询")
 
     async def fetch_submission_verdict(
         self, record_id: str, credentials: Credentials | None = None

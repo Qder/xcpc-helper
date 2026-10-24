@@ -23,6 +23,7 @@ from adapters.base import (
     Credentials,
     PlatformAdapter,
     PlatformError,
+    ProblemMeta,
     UserNotFoundError,
     Verdict,
 )
@@ -52,6 +53,7 @@ from modules.activity.schemas import (
     PlatformsOut,
     ProfileOut,
     ProfileUpdateIn,
+    RecommendEmptyReason,
     RecommendItemOut,
     RecommendOut,
     RefineStatusOut,
@@ -530,6 +532,7 @@ class ActivityService:
             pid
             for pid, adapter in self._adapters.items()
             if Capability.PROBLEMSET in adapter.capabilities
+            or Capability.PROBLEM_LOOKUP in adapter.capabilities
         }
         return ReviewOut(
             items=[
@@ -551,33 +554,41 @@ class ActivityService:
         )
 
     async def recommend(self, platform: str, problem_key: str) -> RecommendOut:
-        """同类推荐：按共同标签 + 相近难度从题单缓存里挑未 AC 过的题。
+        """同类推荐：按共同标签 + 相近难度挑未 AC 过的题。
 
-        与错题本隔离：推荐失败（缓存与刷新都不可用）只让本次推荐为空，
-        错题列表照常工作。缓存过期时在此懒刷新，失败保留旧缓存。
+        两种取数据的方式（按 adapter 能力选择，主干不判平台）：
+        - PROBLEMSET：全量题单缓存（CF），源题与候选都来自缓存；
+        - PROBLEM_LOOKUP：定点查询（牛客），先查源题画像再查同标签候选。
+        与错题本隔离：推荐失败只让本次推荐为空，错题列表照常工作。
         """
         adapter = self._adapter(platform)
-        if Capability.PROBLEMSET not in adapter.capabilities:
+        has_set = Capability.PROBLEMSET in adapter.capabilities
+        has_lookup = Capability.PROBLEM_LOOKUP in adapter.capabilities
+        if not has_set and not has_lookup:
             raise BadRequestError(f"平台 {platform} 不支持题单，无法推荐同类题")
 
-        cached = await self._problemset(platform)
-        if cached is None:
-            return RecommendOut(items=[])
-
-        target = next(
-            (p for p in cached.items if p.problem_key == problem_key), None
-        )
-        if target is None:
-            # 题单未命中源题（如新赛题尚未进入题单）：空列表，不报错
-            return RecommendOut(items=[])
-
         submissions = self._submissions(platform)
-        solved = {
-            s.problem_key for s in submissions if s.verdict == Verdict.AC
-        }
-        picked = review.recommend_problems(
-            target=target, candidates=cached.items, solved=solved
-        )
+        solved = {s.problem_key for s in submissions if s.verdict == Verdict.AC}
+        stale = False
+        reason: RecommendEmptyReason | None = None
+
+        if has_lookup:
+            picked, stale, reason = await self._recommend_by_lookup(
+                adapter, platform, problem_key, solved
+            )
+        else:
+            cached = await self._problemset(platform)
+            if cached is None:
+                return RecommendOut(items=[], stale=True)
+            stale = cached.stale
+            picked = self._recommend_from_set(cached, problem_key, solved)
+            if not picked:
+                reason = self._empty_reason_from_set(cached, problem_key)
+
+        # 有结果时 reason 无意义（前端只在空列表时读）
+        if picked:
+            reason = None
+
         return RecommendOut(
             items=[
                 RecommendItemOut(
@@ -589,8 +600,63 @@ class ActivityService:
                 )
                 for p in picked
             ],
-            stale=cached.stale,
+            stale=stale,
+            reason=reason,
         )
+
+    @staticmethod
+    def _empty_reason_from_set(
+        cached: problemset.CachedProblemset, problem_key: str
+    ) -> RecommendEmptyReason:
+        """全量题单路径的空结果归因：源题不在题单里 vs 没有匹配。"""
+        found = any(p.problem_key == problem_key for p in cached.items)
+        return "no_match" if found else "not_indexed"
+
+    @staticmethod
+    def _recommend_from_set(
+        cached: problemset.CachedProblemset,
+        problem_key: str,
+        solved: set[str],
+    ) -> list[ProblemMeta]:
+        """全量题单路径：源题取自缓存，候选即缓存全集。"""
+        target = next(
+            (p for p in cached.items if p.problem_key == problem_key), None
+        )
+        if target is None:
+            # 题单未命中源题（如新赛题尚未进入题单）：空列表，不报错
+            return []
+        return review.recommend_problems(
+            target=target, candidates=cached.items, solved=solved
+        )
+
+    async def _recommend_by_lookup(
+        self,
+        adapter: PlatformAdapter,
+        platform: str,
+        problem_key: str,
+        solved: set[str],
+    ) -> tuple[list[ProblemMeta], bool, RecommendEmptyReason | None]:
+        """定点查询路径：查源题画像 → 查同标签候选 → 统一打分。
+
+        返回 (推荐列表, stale, 空结果原因)；平台故障时返回空列表且 stale=True
+        （前端据此提示降级），不抛错。
+        """
+        try:
+            target = await adapter.fetch_problem(problem_key)
+            if target is None:
+                # 题号未收录（如牛客比赛专属题不进题库）：区分于"没有匹配"
+                return [], False, "not_indexed"
+            candidates = await adapter.find_similar_problems(
+                target, limit=review.RECOMMEND_LIMIT
+            )
+        except PlatformError as exc:
+            logger.warning("题目查询失败 [%s/%s]：%s", platform, problem_key, exc)
+            return [], True, None
+
+        picked = review.recommend_problems(
+            target=target, candidates=candidates, solved=solved
+        )
+        return picked, False, ("no_match" if not picked else None)
 
     async def _problemset(self, platform: str) -> problemset.CachedProblemset | None:
         """取题单缓存：TTL 内直接用；过期则刷新，刷新失败回退旧缓存（stale）。"""

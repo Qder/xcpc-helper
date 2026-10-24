@@ -387,6 +387,116 @@ def test_to_submission_row_mapping():
     assert s.submitted_at == ts_utc
 
 
+# ===== 题目查询（PROBLEM_LOOKUP） =====
+
+PROBLEM_LIST_HTML = (FIXTURES / "nc_problem_list_sample.html").read_text(
+    encoding="utf-8"
+)
+
+
+async def test_fetch_problem_exact_match():
+    """keyword 精确查询返回单题画像：标签文本 + 标签主键 + 难度 + 外链。"""
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert "/acm/problem/list" in str(request.url)
+        assert request.url.params["keyword"] == "322568"
+        return httpx.Response(200, text=PROBLEM_LIST_HTML)
+
+    adapter, fetcher = make_adapter(handler)
+    try:
+        meta = await adapter.fetch_problem("322568")
+    finally:
+        await fetcher.aclose()
+
+    assert meta is not None
+    assert meta.problem_key == "322568"
+    assert meta.name == "小月的前缀集合"
+    assert meta.rating == 1200
+    assert meta.tags == ["字典树（Trie树）", "哈希"]
+    # 牛客的 tagId 过滤只认主键，必须保留 data-id
+    assert meta.tag_ids == ["1269", "1274"]
+    assert meta.url == "https://ac.nowcoder.com/acm/problem/322568"
+
+
+async def test_fetch_problem_not_found_returns_none():
+    """题库里没有该题号时返回 None（不抛错，由调用方给空推荐）。"""
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="<html><body></body></html>")
+
+    adapter, fetcher = make_adapter(handler)
+    try:
+        assert await adapter.fetch_problem("999999") is None
+    finally:
+        await fetcher.aclose()
+
+
+async def test_fetch_problem_missing_rating_is_none():
+    """难度列为空（旧题未定级）→ rating 为 None，标签仍可用于推荐。"""
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=PROBLEM_LIST_HTML)
+
+    adapter, fetcher = make_adapter(handler)
+    try:
+        meta = await adapter.fetch_problem("215120")
+    finally:
+        await fetcher.aclose()
+
+    assert meta is not None
+    assert meta.rating is None
+    assert meta.tags == ["图论", "最短路"]
+
+
+def test_parse_problem_rows_skips_rows_without_title():
+    """缺 title 类的行（结构异常）跳过，不让整页解析失败。"""
+    metas = NowcoderAdapter._parse_problem_rows(PROBLEM_LIST_HTML)
+    keys = [m.problem_key for m in metas]
+    assert "999999" not in keys
+    assert keys == ["325377", "322568", "307924", "215120"]
+
+
+async def test_find_similar_uses_tag_ids_and_rating_window():
+    """候选查询带上 tagId 与难度窗口（服务端过滤，减少请求量与候选规模）。"""
+    seen: dict[str, str] = {}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        seen.update(dict(request.url.params))
+        return httpx.Response(200, text=PROBLEM_LIST_HTML)
+
+    adapter, fetcher = make_adapter(handler)
+    try:
+        target = await adapter.fetch_problem("322568")
+        assert target is not None
+        await adapter.find_similar_problems(target, limit=5)
+    finally:
+        await fetcher.aclose()
+
+    assert seen["tagId"] == "1269,1274"
+    assert seen["minDifficulty"] == "1000"
+    assert seen["maxDifficulty"] == "1300"
+
+
+async def test_find_similar_without_rating_skips_difficulty():
+    """源题无难度时不传难度区间（只按标签查）。"""
+    seen: dict[str, str] = {}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        seen.update(dict(request.url.params))
+        return httpx.Response(200, text=PROBLEM_LIST_HTML)
+
+    adapter, fetcher = make_adapter(handler)
+    try:
+        target = await adapter.fetch_problem("215120")
+        assert target is not None
+        await adapter.find_similar_problems(target, limit=5)
+    finally:
+        await fetcher.aclose()
+
+    assert "minDifficulty" not in seen
+    assert "maxDifficulty" not in seen
+
+
 # ===== 辅助函数 =====
 
 

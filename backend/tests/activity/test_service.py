@@ -3,7 +3,7 @@
 import asyncio
 import json
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import httpx
@@ -919,3 +919,210 @@ async def test_recommend_unknown_problem_returns_empty(tmp_path):
 
 async def _failing_problemset():
     raise PlatformError("题单接口不可用")
+
+
+# ===== 牛客同类推荐（PROBLEM_LOOKUP 定点查询路径） =====
+
+NC_PROBLEM_LIST = (FIXTURES / "nc_problem_list_sample.html").read_text(
+    encoding="utf-8"
+)
+NC_RATING_OK = json.loads(
+    (FIXTURES / "nc_rating_history_ok.json").read_text(encoding="utf-8")
+)
+# 牛客时间戳为中国时区（UTC+8），与本地时区无关
+CHINA_TZ = timezone(timedelta(hours=8))
+
+
+def nc_practice_html(rows: list[tuple[str, str, str, str]]) -> str:
+    """构造 practice-coding 表格：每行 (submission_id, problem_id, status, time)。"""
+    cells = []
+    for sid, pid, status, ts in rows:
+        cells.append(
+            f'<tr><td><a href="/acm/contest/view-submission?submissionId={sid}">'
+            f"{sid}</a></td>"
+            f'<td><a href="/acm/problem/{pid}">{pid}</a></td>'
+            f'<td><a href="#" class="font-green">{status}</a></td>'
+            f"<td>100</td><td>10</td><td>512</td><td>500</td>"
+            f"<td>C++</td><td>{ts}</td></tr>"
+        )
+    return (
+        "<!DOCTYPE html><html><body><table>"
+        "<tr><th>提交ID</th><th>题目</th><th>评测结果</th><th>得分</th>"
+        "<th>运行时间</th><th>使用内存</th><th>代码长度</th><th>使用语言</th>"
+        "<th>提交时间</th></tr>" + "".join(cells) + "</table></body></html>"
+    )
+
+
+def nc_time(days_ago: int) -> str:
+    """系统本地"N 天前"的牛客时间字符串（中国时区）。"""
+    d = datetime.now(CHINA_TZ).date() - timedelta(days=days_ago)
+    return f"{d.isoformat()} 12:00:00"
+
+
+def make_lookup_handler(
+    status_rows: list[tuple[str, str, str, str]] | None = None,
+    *,
+    problem_list_body: str | None = None,
+    on_problem_list=None,
+):
+    """牛客 handler：rating-history / practice-coding / 题库列表。"""
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.endswith("/rating-history"):
+            return ok_json(NC_RATING_OK)
+        if "practice-coding" in path:
+            return httpx.Response(
+                200, text=nc_practice_html(status_rows or [])
+            )
+        if path.endswith("/acm/problem/list"):
+            if on_problem_list is not None:
+                on_problem_list(dict(request.url.params))
+            if problem_list_body is None:
+                return httpx.Response(503)
+            return httpx.Response(200, text=problem_list_body)
+        if "/acm/contest/profile/" in path:
+            return httpx.Response(200, text="<html><title>demo的比赛主页</title></html>")
+        return httpx.Response(404)
+
+    return handler
+
+
+async def make_lookup_service(tmp_path, handler) -> ActivityService:
+    fetcher = HttpFetcher(
+        transport=httpx.MockTransport(handler), base_backoff=0.01
+    )
+    svc = ActivityService(
+        Settings(user_data_dir=tmp_path / "user", data_dir=tmp_path / "data"),
+        fetcher,
+    )
+    svc._adapters["nowcoder"].min_interval = 0
+    return svc
+
+
+async def test_nowcoder_can_recommend(tmp_path):
+    """具备 PROBLEM_LOOKUP 能力 → 错题条目 canRecommend 为真。"""
+    rows = [("9001", "307924", "答案错误", nc_time(1))]
+    svc = await make_lookup_service(tmp_path, make_lookup_handler(rows))
+    try:
+        await svc.bind(BindIn(platform="nowcoder", handle="676789139"))
+        await wait_sync_done(svc)
+
+        out = svc.review_list("nowcoder", "all")
+        assert len(out.items) == 1
+        assert out.items[0].canRecommend is True
+    finally:
+        await svc.aclose()
+
+
+async def test_nowcoder_recommend_matches_shared_tags(tmp_path):
+    """源题 322568 的标签（Trie/哈希）→ 推荐同标签且未 AC 的题。"""
+    # 307924 已 AC，必须被排除
+    rows = [("9001", "307924", "答案正确", nc_time(2))]
+    svc = await make_lookup_service(
+        tmp_path, make_lookup_handler(rows, problem_list_body=NC_PROBLEM_LIST)
+    )
+    try:
+        await svc.bind(BindIn(platform="nowcoder", handle="676789139"))
+        await wait_sync_done(svc)
+
+        out = await svc.recommend("nowcoder", "322568")
+        keys = [i.problemKey for i in out.items]
+        # 源题排除；307924 已 AC 排除；215120 标签不同（图论/最短路）
+        assert "322568" not in keys
+        assert "307924" not in keys
+        assert "215120" not in keys
+        # 325377（差分/扫描线）与源题无共同标签，也应排除
+        assert keys == []
+        assert out.stale is False
+    finally:
+        await svc.aclose()
+
+
+async def test_nowcoder_recommend_returns_candidates(tmp_path):
+    """无已 AC 记录时，同标签候选正常返回并带上标签与难度。"""
+    svc = await make_lookup_service(
+        tmp_path, make_lookup_handler([], problem_list_body=NC_PROBLEM_LIST)
+    )
+    try:
+        out = await svc.recommend("nowcoder", "322568")
+        keys = [i.problemKey for i in out.items]
+        assert "322568" not in keys  # 源题排除
+        assert "307924" in keys  # 同为哈希，难度差 100
+        item = next(i for i in out.items if i.problemKey == "307924")
+        assert item.rating == 1100
+        assert "哈希" in item.tags
+    finally:
+        await svc.aclose()
+
+
+async def test_nowcoder_recommend_not_found_is_empty(tmp_path):
+    """题号不在题库：返回空列表，reason=not_indexed，且不算降级。"""
+    svc = await make_lookup_service(
+        tmp_path, make_lookup_handler([], problem_list_body="<html></html>")
+    )
+    try:
+        out = await svc.recommend("nowcoder", "999999")
+        assert out.items == []
+        assert out.stale is False
+        assert out.reason == "not_indexed"
+    finally:
+        await svc.aclose()
+
+
+async def test_nowcoder_recommend_no_match_has_reason(tmp_path):
+    """源题在库内但无同标签未做题：reason=no_match（区别于不在题库）。"""
+    svc = await make_lookup_service(
+        tmp_path, make_lookup_handler([], problem_list_body=NC_PROBLEM_LIST)
+    )
+    try:
+        # 325377 标签为 差分/扫描线，样例里没有同标签候选
+        out = await svc.recommend("nowcoder", "325377")
+        assert out.items == []
+        assert out.reason == "no_match"
+    finally:
+        await svc.aclose()
+
+
+async def test_nowcoder_recommend_has_items_has_no_reason(tmp_path):
+    """有推荐结果时 reason 为空（前端只在空列表时读）。"""
+    svc = await make_lookup_service(
+        tmp_path, make_lookup_handler([], problem_list_body=NC_PROBLEM_LIST)
+    )
+    try:
+        out = await svc.recommend("nowcoder", "322568")
+        assert out.items
+        assert out.reason is None
+    finally:
+        await svc.aclose()
+
+
+async def test_nowcoder_recommend_platform_failure_is_stale(tmp_path):
+    """题库接口故障：返回空列表并标记 stale（前端提示降级），不抛错。"""
+    svc = await make_lookup_service(tmp_path, make_lookup_handler([], problem_list_body=None))
+    try:
+        out = await svc.recommend("nowcoder", "322568")
+        assert out.items == []
+        assert out.stale is True
+    finally:
+        await svc.aclose()
+
+
+async def test_nowcoder_recommend_queries_tag_ids_and_rating_window(tmp_path):
+    """候选查询带 tagId 主键与难度窗口（牛客只认主键，不认标签文本）。"""
+    seen: list[dict] = []
+    svc = await make_lookup_service(
+        tmp_path,
+        make_lookup_handler(
+            [], problem_list_body=NC_PROBLEM_LIST, on_problem_list=seen.append
+        ),
+    )
+    try:
+        await svc.recommend("nowcoder", "322568")
+        # 第一次查源题（keyword），第二次查候选（tagId + 难度区间）
+        assert seen[0]["keyword"] == "322568"
+        assert seen[1]["tagId"] == "1269,1274"
+        assert seen[1]["minDifficulty"] == "1000"
+        assert seen[1]["maxDifficulty"] == "1300"
+    finally:
+        await svc.aclose()

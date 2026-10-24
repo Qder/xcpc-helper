@@ -17,6 +17,7 @@ from adapters.base import (
     PlatformAdapter,
     PlatformError,
     PlatformSubmission,
+    ProblemMeta,
     ProgressCallback,
     SyncBatch,
     UserInfo,
@@ -36,6 +37,12 @@ PAGE_SIZE = 50  # 经实测，200 有重复页 bug，50 稳定
 MAX_PAGES = 100  # 安全护栏
 CHINA_TZ = timezone(timedelta(hours=8))  # 中国时区 UTC+8
 
+# 题库列表页每页条数（与提交页不同：题库页 pageSize=200 返回空表，必须用默认 50）
+PROBLEM_PAGE_SIZE = 50
+# 推荐候选的难度窗口（相对源题）：略低到略高，与 review.RATING_LOW/HIGH 同口径
+PROBLEM_RATING_LOW = 200
+PROBLEM_RATING_HIGH = 100
+
 # 个人主页 HTML 提取正则（提取用户名/昵称）
 _CODER_NAME_RE = re.compile(
     r'<a[^>]*class="coder-name[^"]*"[^>]*>([^<]*)</a>'
@@ -48,11 +55,24 @@ _PROB_RE = re.compile(r'href="/acm/problem/([^"]+)"[^>]*>([^<]*)</a>')
 _STATUS_RE = re.compile(r">([^<]*)</a>")
 _TAG_RE = re.compile(r"<[^>]+>")
 
+# ===== 题库列表页（PROBLEM_LOOKUP）正则 =====
+# 题库列表行以 data-problemId 标识（与提交页的表格结构不同）
+_PROBLEM_ROW_RE = re.compile(r'<tr data-problemId="(\d+)"[^>]*>(.*?)</tr>', re.DOTALL)
+# 题目标题：<a href="/acm/problem/325377" class="title">小月的长廊</a>
+_PROBLEM_TITLE_RE = re.compile(r'class="title">([^<]*)</a>')
+# 知识点标签：<a class="tag-label js-tag" data-id="1286">差分/前缀和</a>
+_PROBLEM_TAG_RE = re.compile(
+    r'class="tag-label[^"]*"[^>]*data-id="(\d+)"[^>]*>([^<]*)</a>'
+)
+_PROBLEM_LIST_URL = f"{BASE}/acm/problem/list"
+
 
 class NowcoderAdapter(PlatformAdapter):
     platform_id = "nowcoder"
     name = "牛客竞赛"
-    capabilities = frozenset({Capability.SUBMISSIONS, Capability.USER_INFO})
+    capabilities = frozenset(
+        {Capability.SUBMISSIONS, Capability.USER_INFO, Capability.PROBLEM_LOOKUP}
+    )
     auth = AuthMode.NONE
     min_interval = 1.0  # 保守限流
     homepage_url = "https://ac.nowcoder.com"
@@ -179,6 +199,100 @@ class NowcoderAdapter(PlatformAdapter):
             page += 1
 
         yield SyncBatch(done=True)
+
+    # ===== 题目查询（PROBLEM_LOOKUP，错题本同类推荐消费） =====
+
+    async def fetch_problem(self, problem_key: str) -> ProblemMeta | None:
+        """按题号查单题画像（题库列表页 keyword 精确查询）。
+
+        牛客题库无法一次拉全站（约 300 页），改用定点查询：keyword 传题号
+        会精确返回单条，含知识点标签与难度。查不到返回 None。
+        """
+        rows = await self._fetch_problem_rows(keyword=problem_key)
+        for meta in rows:
+            if meta.problem_key == problem_key:
+                return meta
+        return None
+
+    async def find_similar_problems(
+        self, target: ProblemMeta, *, limit: int
+    ) -> list[ProblemMeta]:
+        """按源题首个标签 + 难度窗口查候选（服务端过滤，减少请求与候选规模）。
+
+        牛客的 tagId 过滤只认主键，故用 target.tag_ids；没有主键标签时退回
+        不限标签的难度窗口查询（候选靠上层按标签文本过滤）。
+        只取一页即可覆盖打分所需（同标签同难度段的题目量远小于一页）。
+        """
+        params: dict[str, Any] = {"pageSize": PROBLEM_PAGE_SIZE, "page": 1}
+        if target.tag_ids:
+            # 实测：多个 tagId 以逗号分隔是 OR 语义，候选更全，交给上层按标签交集排序
+            params["tagId"] = ",".join(target.tag_ids)
+        if target.rating is not None:
+            params["minDifficulty"] = max(0, target.rating - PROBLEM_RATING_LOW)
+            params["maxDifficulty"] = target.rating + PROBLEM_RATING_HIGH
+
+        rows = await self._fetch_problem_rows(params=params)
+        # 上层还要按共同标签数排序、排除已 AC 与源题，这里多留一些余量
+        return rows[: max(limit * 8, PROBLEM_PAGE_SIZE)]
+
+    async def _fetch_problem_rows(
+        self,
+        *,
+        keyword: str | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> list[ProblemMeta]:
+        """拉取题库列表页并解析为题目画像（单页）。"""
+        query: dict[str, Any] = {"pageSize": PROBLEM_PAGE_SIZE, "page": 1}
+        if keyword is not None:
+            query["keyword"] = keyword
+        if params:
+            query.update(params)
+
+        resp = await self._fetcher.request(
+            "GET",
+            _PROBLEM_LIST_URL,
+            params=query,
+            platform=self.platform_id,
+            min_interval=self.min_interval,
+        )
+        return self._parse_problem_rows(resp.text)
+
+    @staticmethod
+    def _parse_problem_rows(html: str) -> list[ProblemMeta]:
+        """解析题库列表页 HTML 为题目画像列表。
+
+        每行结构：题号单元格 + 标题/标签单元格 + 难度 + 通过人数。
+        难度列为空时（部分旧题未定级）rating 置 None；缺标题的行跳过。
+        """
+        out: list[ProblemMeta] = []
+        for pid, body in _PROBLEM_ROW_RE.findall(html):
+            title_match = _PROBLEM_TITLE_RE.search(body)
+            if not title_match:
+                continue
+            name = title_match.group(1).strip()
+            tags: list[str] = []
+            tag_ids: list[str] = []
+            for tag_id, tag_text in _PROBLEM_TAG_RE.findall(body):
+                tag_ids.append(tag_id)
+                tags.append(tag_text.strip())
+            cells = [
+                _TAG_RE.sub("", td).strip() for td in _TD_RE.findall(body)
+            ]
+            # 列序：题号 / 标题+标签 / 难度 / 通过人数；难度解析失败视为未定级
+            rating: int | None = None
+            if len(cells) >= 3 and cells[2].isdigit():
+                rating = int(cells[2])
+            out.append(
+                ProblemMeta(
+                    problem_key=pid,
+                    name=name,
+                    rating=rating,
+                    tags=tags,
+                    tag_ids=tag_ids,
+                    url=f"{BASE}/acm/problem/{pid}",
+                )
+            )
+        return out
 
     # ===== 内部：HTTP =====
 
