@@ -221,6 +221,8 @@ function goReview(): void {
   align-items: center;
   gap: 12px;
   flex: none;
+  /* 与错题本一致：窄窗口下换行，不把整页撑出横向滚动条 */
+  flex-wrap: wrap;
 }
 
 .todo-count {
@@ -340,7 +342,9 @@ function goReview(): void {
 }
 
 .row-tags {
-  flex: none;
+  /* 标签列可压缩：窄窗口下优先挤压它，而不是把整行（进而整页）撑出横向滚动 */
+  flex: 0 1 auto;
+  min-width: 0;
   max-width: 220px;
   overflow: hidden;
   text-overflow: ellipsis;

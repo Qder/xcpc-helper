@@ -71,6 +71,17 @@ const authExpiredIds = computed(
   border: 1px solid var(--border);
   border-radius: 99px;
   background: var(--surface);
+  /* 窄窗口（页签总宽 > 容器）时不撑破父级：自身在内部横向滑动，整页不产生
+     横向滚动条（否则工具栏右侧的按钮会被推出可视区、被侧边导航盖住）。
+     父级工具栏加了 flex-wrap，空间不够时其它控件换行，这里仍能拿到整行宽度。 */
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.platform-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .tab-chip {

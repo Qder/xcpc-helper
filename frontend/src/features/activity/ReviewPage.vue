@@ -342,6 +342,9 @@ async function onImport(): Promise<void> {
   align-items: center;
   gap: 12px;
   flex: none;
+  /* 窄窗口下让页签 / 状态筛选 / 导入按钮换行，而不是把整页撑出横向滚动条
+     （横向溢出会把右侧按钮推出可视区、被侧边导航遮挡） */
+  flex-wrap: wrap;
 }
 
 .review-toolbar--top {
