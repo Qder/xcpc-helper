@@ -9,6 +9,8 @@ import type {
   PlatformId,
   PlatformMeta,
   RefineStatus,
+  ReviewData,
+  ReviewFilter,
   SubmissionEntry,
 } from '@/features/activity/types'
 import type { PlatformScope } from '@/features/activity/store'
@@ -145,6 +147,20 @@ export function triggerSync(platform?: PlatformId): Promise<void> {
 
 export function fetchSyncStatus(): Promise<BoundAccount[]> {
   return request<BoundAccount[]>('/activity/sync/status')
+}
+
+/* ---------- 错题本（review） ---------- */
+
+export function fetchReview(opts: {
+  platform?: PlatformScope
+  status?: ReviewFilter
+} = {}): Promise<ReviewData> {
+  const params = new URLSearchParams()
+  const platform = opts.platform ? scopeParam(opts.platform) : ''
+  if (platform) params.set('platform', platform)
+  if (opts.status && opts.status !== 'all') params.set('status', opts.status)
+  const qs = params.toString()
+  return request<ReviewData>(`/activity/review${qs ? `?${qs}` : ''}`)
 }
 
 /* ---------- 精细化同步（REFINE_VERDICT 能力平台） ---------- */

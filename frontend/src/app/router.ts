@@ -44,6 +44,11 @@ export const router = createRouter({
       meta: { group: '训练统计', sub: '数据总览' },
     },
     {
+      path: '/activity/review',
+      component: () => import('@/features/activity/ReviewPage.vue'),
+      meta: { group: '训练统计', sub: '错题本' },
+    },
+    {
       path: '/settings',
       component: () => import('@/app/PlaceholderPage.vue'),
       meta: {

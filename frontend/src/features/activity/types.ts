@@ -94,3 +94,49 @@ export interface RefineStatus {
   /** 普通同步完成后自动精化 */
   auto: boolean
 }
+
+/* ---------- 错题本（review，见 docs/design/activity/review.md） ---------- */
+
+/** 错题状态：未通过（从未 AC）/ 挣扎题（首次 AC 前失败达阈值） */
+export type ReviewStatus = 'unsolved' | 'struggled'
+
+/** 错题状态筛选（all 为不筛选） */
+export type ReviewFilter = 'all' | ReviewStatus
+
+export interface ReviewItem {
+  platform: PlatformId
+  problemKey: string
+  problemName: string
+  problemUrl: string
+  /** 平台原始难度值（不跨平台归一） */
+  difficulty: number | string | null
+  status: ReviewStatus
+  /** 首次 AC 之前的失败次数（未通过为全部失败数） */
+  failCount: number
+  /** 最近一次尝试（本地时区） */
+  lastAttemptAt: string
+  /** 该平台是否具备题单能力（决定展开箭头是否出现） */
+  canRecommend: boolean
+}
+
+export interface ReviewData {
+  items: ReviewItem[]
+  /** 当前组是否绑定了任何账号（区分空态） */
+  bound: boolean
+  /** 是否至少有一个账号同步成功过 */
+  synced: boolean
+}
+
+/** 同类推荐题（题单缓存的题目画像；本期仅 Codeforces 提供） */
+export interface RecommendItem {
+  problemKey: string
+  name: string
+  /** 平台原始难度值（CF 为分值） */
+  rating: number | null
+  tags: string[]
+  url: string
+}
+
+export interface RecommendData {
+  items: RecommendItem[]
+}
