@@ -119,6 +119,8 @@ export interface ReviewItem {
   canRecommend: boolean
   /** 手动收录（前端据此显示删除按钮） */
   manual?: boolean
+  /** 已在待办清单里（前端据此把「待办」按钮置为「已待办」） */
+  inTodo?: boolean
 }
 
 export interface ReviewData {
@@ -183,4 +185,40 @@ export interface SearchProblemsData {
   page: number
   /** 是否还有下一页（按「本页是否满」判断） */
   hasMore: boolean
+}
+
+/* ---------- 待办题目（todo，见 docs/design/activity/todo.md） ---------- */
+
+/** 待办条目（已 AC 的条目后端不会返回） */
+export interface TodoItem {
+  platform: PlatformId
+  problemKey: string
+  problemName: string
+  problemUrl: string
+  /** 平台原始难度值（不跨平台归一） */
+  difficulty: number | string | null
+  /** 加入时的标签快照（空 = 该平台无标签能力或查询失败） */
+  tags: string[]
+  /** 加入时间（本地时区） */
+  addedAt: string
+  /** 加入时来源：未通过 / 收录（挣扎题已 AC，不会进待办） */
+  status: ReviewStatus
+}
+
+/** 标签花片：当前平台筛选下、仍未 AC 的待办里该标签出现的次数 */
+export interface TodoTag {
+  name: string
+  count: number
+}
+
+export interface TodoData {
+  items: TodoItem[]
+  /** 花片（不受 tag 筛选影响，否则点了标签就没法再切换） */
+  tags: TodoTag[]
+}
+
+/** 加入结果：created=false 表示幂等命中已有条目（不是错误） */
+export interface TodoAddResult {
+  item: TodoItem
+  created: boolean
 }

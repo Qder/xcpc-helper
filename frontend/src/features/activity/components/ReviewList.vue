@@ -5,7 +5,7 @@
  * 具备题单能力的平台可展开"同类推荐"：首次展开才请求，结果按题缓存，收起不丢。 */
 
 import { computed, reactive } from 'vue'
-import { ChevronDown, ExternalLink, Inbox, Trash2 } from 'lucide-vue-next'
+import { ChevronDown, ExternalLink, Inbox, ListPlus, Trash2 } from 'lucide-vue-next'
 import { NButton, NPagination, NPopconfirm, NSpin, NTag } from 'naive-ui'
 import {
   difficultyLabel,
@@ -14,6 +14,7 @@ import {
   statusLabel,
   statusTagType,
 } from '@/features/activity/model/review'
+import { canAddToTodo, showsTodoAction } from '@/features/activity/model/todo'
 import { pageCount, paged } from '@/features/activity/model/pagination'
 import { fetchReviewRecommend } from '@/features/activity/api'
 import { useActivity } from '@/features/activity/store'
@@ -27,6 +28,8 @@ const props = defineProps<{
   emptyAction?: string
   /** 当前页码（从 1 起） */
   page: number
+  /** 正在加入待办的行键（"platform/problemKey"），用于按钮 loading */
+  todoPending?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -34,6 +37,8 @@ const emit = defineEmits<{
   'update:page': [page: number]
   /** 删除手动收录项（父级调接口并本地移除） */
   remove: [item: ReviewItem]
+  /** 加入待办（父级调接口，成功后就地标记 inTodo） */
+  'add-todo': [item: ReviewItem]
 }>()
 
 const { platformName } = useActivity()
@@ -141,6 +146,19 @@ function emptyText(state: RecommendState | undefined): string {
         </NTag>
         <span class="row-fails">{{ failLabel(item) }}</span>
         <span class="row-time">{{ relativeDay(item.lastAttemptAt) }}</span>
+        <NButton
+          v-if="showsTodoAction(item)"
+          class="row-todo"
+          size="tiny"
+          :quaternary="!canAddToTodo(item)"
+          :secondary="canAddToTodo(item)"
+          :disabled="!canAddToTodo(item)"
+          :loading="todoPending === rowKey(item)"
+          @click="emit('add-todo', item)"
+        >
+          <template #icon><ListPlus :size="13" /></template>
+          {{ item.inTodo ? '已待办' : '待办' }}
+        </NButton>
         <NPopconfirm v-if="item.manual" @positive-click="emit('remove', item)">
           <template #trigger>
             <NButton class="row-delete" size="tiny" quaternary aria-label="删除收录">
@@ -324,6 +342,11 @@ function emptyText(state: RecommendState | undefined): string {
 
 .row-delete:hover {
   color: #c63b57;
+}
+
+.row-todo {
+  flex: none;
+  font-size: 12px;
 }
 
 .toggle-icon {

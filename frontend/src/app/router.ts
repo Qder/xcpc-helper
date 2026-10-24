@@ -49,6 +49,11 @@ export const router = createRouter({
       meta: { group: '训练统计', sub: '错题本' },
     },
     {
+      path: '/activity/todo',
+      component: () => import('@/features/activity/TodoPage.vue'),
+      meta: { group: '训练统计', sub: '待办' },
+    },
+    {
       path: '/settings',
       component: () => import('@/app/PlaceholderPage.vue'),
       meta: {

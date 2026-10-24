@@ -11,8 +11,9 @@ import PlatformTabs from '@/features/activity/components/PlatformTabs.vue'
 import ReviewList from '@/features/activity/components/ReviewList.vue'
 import ReviewManualAdd from '@/features/activity/components/ReviewManualAdd.vue'
 import ReviewTagSearch from '@/features/activity/components/ReviewTagSearch.vue'
-import { fetchReview, removeReviewManual } from '@/features/activity/api'
+import { fetchReview, addTodo, removeReviewManual } from '@/features/activity/api'
 import { removeReviewItem, upsertReviewItem } from '@/features/activity/model/review'
+import { markInTodo } from '@/features/activity/model/todo'
 import { useUserGroups } from '@/features/activity/profile'
 import { useActivity, type PlatformScope } from '@/features/activity/store'
 import type { ReviewData, ReviewFilter, ReviewItem } from '@/features/activity/types'
@@ -26,6 +27,8 @@ const data = ref<ReviewData | null>(null)
 const loading = ref(false)
 const page = ref(1)
 const tagSearchOpen = ref(false)
+/** 正在加入待办的行键（"platform/problemKey"），用于按钮 loading 防重复点击 */
+const todoPending = ref<string | null>(null)
 
 const STATUS_OPTIONS: { value: ReviewFilter; label: string }[] = [
   { value: 'all', label: '全部' },
@@ -115,6 +118,28 @@ async function onRemove(item: ReviewItem): Promise<void> {
     message.error(e instanceof Error ? e.message : '删除失败，请稍后重试')
   }
 }
+
+/** 加入待办：成功后就地把该行标成「已待办」（不整页刷新，保留筛选与滚动位置）。
+ * 已 AC 的题后端会拒绝（400），按 detail 提示，前端不猜原因。 */
+async function onAddTodo(item: ReviewItem): Promise<void> {
+  const key = `${item.platform}/${item.problemKey}`
+  if (todoPending.value) return
+  todoPending.value = key
+  try {
+    const res = await addTodo(item.platform, item.problemKey)
+    if (data.value) {
+      data.value = {
+        ...data.value,
+        items: markInTodo(data.value.items, item.platform, item.problemKey),
+      }
+    }
+    message.success(res.created ? '已加入待办' : '该题已在待办里')
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : '加入待办失败，请稍后重试')
+  } finally {
+    todoPending.value = null
+  }
+}
 </script>
 
 <template>
@@ -163,8 +188,10 @@ async function onRemove(item: ReviewItem): Promise<void> {
         :items="data?.items ?? []"
         :empty-hint="emptyHint"
         :empty-action="emptyAction"
+        :todo-pending="todoPending"
         @empty-action="onEmptyAction"
         @remove="onRemove"
+        @add-todo="onAddTodo"
       />
     </section>
 

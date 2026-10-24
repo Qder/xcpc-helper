@@ -16,6 +16,8 @@ import type {
   ReviewFilter,
   SearchProblemsData,
   SubmissionEntry,
+  TodoAddResult,
+  TodoData,
 } from '@/features/activity/types'
 import type { PlatformScope } from '@/features/activity/store'
 
@@ -211,6 +213,36 @@ export function searchReviewProblems(
 ): Promise<SearchProblemsData> {
   const params = new URLSearchParams({ platform, tag, page: String(page) })
   return request<SearchProblemsData>(`/activity/review/search?${params.toString()}`)
+}
+
+/* ---------- 待办题目（todo） ---------- */
+
+/** 待办列表（已 AC 自动隐藏）+ 标签花片；纯本地读取，不触发同步 */
+export function fetchTodo(opts: {
+  platform?: PlatformScope
+  tag?: string | null
+} = {}): Promise<TodoData> {
+  const params = new URLSearchParams()
+  const platform = opts.platform ? scopeParam(opts.platform) : ''
+  if (platform) params.set('platform', platform)
+  if (opts.tag) params.set('tag', opts.tag)
+  const qs = params.toString()
+  return request<TodoData>(`/activity/todo${qs ? `?${qs}` : ''}`)
+}
+
+/** 加入待办（已 AC 后端返回 400；重复加入幂等） */
+export function addTodo(platform: string, problemKey: string): Promise<TodoAddResult> {
+  return request<TodoAddResult>('/activity/todo', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ platform, problemKey }),
+  })
+}
+
+/** 移出待办（只作用于待办清单，不影响错题本与收录） */
+export function removeTodo(platform: string, problemKey: string): Promise<void> {
+  const params = new URLSearchParams({ platform, problemKey })
+  return request<void>(`/activity/todo?${params.toString()}`, { method: 'DELETE' })
 }
 
 /* ---------- 精细化同步（REFINE_VERDICT 能力平台） ---------- */

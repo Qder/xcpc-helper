@@ -40,6 +40,7 @@ export const NAV_GROUPS: NavGroup[] = [
     children: [
       { id: 'act-overview', label: '数据总览', to: '/activity/overview' },
       { id: 'act-review', label: '错题本', to: '/activity/review' },
+      { id: 'act-todo', label: '待办', to: '/activity/todo' },
     ],
   },
   {
