@@ -56,6 +56,27 @@
 
 **限流**：`min_interval = 1.0`，使用共享 `HttpFetcher`（无 WAF 指纹挑战）。
 
+**按算法查找（题库标签目录与搜索）**：`PROBLEM_LOOKUP` 之外的补充端点，
+供错题本「按算法查找」面板使用。
+
+| 方法 | 端点 | 说明 |
+| --- | --- | --- |
+| `list_problem_tags()` | `GET /acm/problem/knowledge/catalog` | 裸 JSON，匿名可用；`data.groups[].childTags[] = {id, name, groupName, totalCount}` |
+| `search_problems(tag_id, page)` | `GET /acm/problem/list/json?tagId=&page=&pageSize=50` | 裸 JSON，比 HTML 列表稳；`data.problemSets[]` |
+
+- `knowledge/catalog` 是「按知识点练习」目录，15 组 155 个叶子；覆盖范围比题库
+  的全量 tag 窄（题库里存在 `差分/前缀和`(1286) 这类不在目录里的 tag），但
+  **目录里的 id 可直接当 `tagId` 用**（校验：`14424` 目录标称 20 题，列表返回 20 题）；
+- `list/json` 的 `data.problemSets[]` 字段：`showId`（`NC274704`）、`problemId`
+  （`274704`，纯数字）、`name`、`difficulty`、`tagList[{id,name}]`、
+  `problemCount`（总数）。**入库用 `problemId`**——与提交归一化的 `problem_key`
+  （纯数字）同口径，用 `showId` 会导致「收录后 AC 了却仍显示」；
+- `tagId`、`minDifficulty`、`maxDifficulty` 与 HTML 列表接口语义一致；
+- 目录里的 `totalCount` 与该 tag 的 `problemCount` 可能略有出入（目录统计含
+  隐藏题），不要用它做分页总数，以 `problemCount` 为准；
+- 原 HTML 解析路径**保留**：`fetch_problem` / `find_similar_problems` 仍走 HTML
+  （结构已验证且只需 1 页），新增的搜索走 JSON，两者互不影响。
+
 ## 陷阱备忘
 
 - **pageSize=200 有服务器 bug**：第 3 页起返回与第 2 页相同数据，必须用 pageSize=50；
@@ -63,4 +84,8 @@
 - **rating-history 验证不返回用户名**：`display_name` 只能留空；
 - **HTML 结构变更风险**：牛客为商业平台，页面结构可能调整，测试 fixture 可快速发现；
 - **题库列表页与提交页表格结构不同**：题库行用 `data-problemId` 标识，标签是
-  `class="tag-label"` 且带 `data-id`；解析正则分开维护，不要复用提交页那套。
+  `class="tag-label"` 且带 `data-id`；解析正则分开维护，不要复用提交页那套；
+- **`showId` 不能当 `problem_key`**：`NC274704` vs `274704`，提交归一化用纯数字，
+  收录用 `showId` 会导致该题 AC 后仍显示为「收录」；
+- **`knowledge/catalog` 不是全量 tag**：它是「按知识点练习」的精选目录；需要
+  题库里的全部 tag 时只能从题目行的 `tagList` 汇总（本期不做）。

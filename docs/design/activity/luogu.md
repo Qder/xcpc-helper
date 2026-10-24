@@ -1,6 +1,8 @@
 # 洛谷适配器（cookie 授权 + 反爬对抗 + UNAC 精化）
 
 > 状态：已实现（第三期平台，首个 `AuthMode.COOKIE`；结论全部来自真实 cookie 实测）。
+> 第四期补充：`PROBLEM_LOOKUP`（题目画像 / 按标签查找 / 标签目录），供错题本
+> 手动收录与同类推荐使用，见本文「题目查询能力」一节。
 > 公共契约与同步语义见 [conventions.md](conventions.md)；本文记录洛谷专属实现。
 
 ## 数据源
@@ -136,6 +138,38 @@ timeout。凭据由 service 暂存（内存，10 分钟 TTL），bind 时消费�
 （功能说明 + 按存量×5s 的耗时预估 + 确认）/ 进行中（百分比 + 中止）/ 已完成
 （「随同步自动精化」开关）。
 
+## 题目查询能力（PROBLEM_LOOKUP，错题本消费）
+
+adapter 声明 `Capability.PROBLEM_LOOKUP`，供「手动收录 + 按算法查找 + 同类推荐」
+使用。四个方法都不涉及用户数据，匿名可用（有凭据时一并透传，撞到限流更少）。
+
+| 方法 | 端点 | 解析 |
+| --- | --- | --- |
+| `fetch_problem(pid)` | `GET /problem/{pid}` | lentille `template=problem.show`，取 `data.problem`（`pid/name/difficulty/tags`）与 `data.translations["zh-CN"].name` |
+| `find_similar_problems(target)` | `GET /problem/list?tag={首个 tag_id}` | lentille `template=problem.list`，`data.problems.result` |
+| `list_problem_tags()` | `GET /_lfe/tags` | 裸 JSON `{tags:[{id,name,type,parent}], types:[...]}`，只取 `type == 2`（算法） |
+| `search_problems(tag_id, page)` | `GET /problem/list?tag={id}&page={n}` | 同上列表页 |
+
+要点：
+
+- **题名优先 `data.problem.name`，回退 `translations["zh-CN"].name`**：实测两者
+  通常一致（`name` 已是当前 locale 的题名），但 `name` 偶发为空（仅译名），
+  两级兜底可避免空题名；
+- **难度是 0–7 档**（与提交记录内嵌的 `problem.difficulty` 完全同口径，可直接
+  与错题列表的难度列比较）；`review.recommend_problems` 的 ±200/±100 窗口在
+  该量纲下等价于「不限制难度」，实际排序由共同标签数决定，符合预期；
+- **`tags` 是数字主键数组**（`[6, 148, 160, 523]`），需要文本时必须查
+  `/_lfe/tags` 建映射；`ProblemMeta.tags` 填文本、`tag_ids` 填主键字符串；
+- **题目不存在**（`/problem/INVALID`）返回 lentille `status=404` →
+  `_get_page_data` 抛 `PlatformError`；`fetch_problem` 需自行捕获并返回 `None`
+  （「查不到」是正常业务结果，与「网络/凭据故障」区分开）；
+- **`/_lfe/tags` 是静态字典**：`Content-Type: application/json`、26KB、含
+  `_version` 字段；可按需在进程内缓存（当前实现每次现取，一次面板打开只取一次）；
+- 列表页 `perPage` 固定 50，`data.problems.count` 是总数；`data.filter.tag` 是
+  二维数组（`[[1]]`），**不要**拿它判断当前筛选；
+- 该能力让洛谷错题行也出现「同类题」入口，这是**预期副作用**（此前洛谷只有
+  `SUBMISSIONS`，无推荐）。
+
 ## 陷阱备忘
 
 - **传输层必须 curl_cffi**：换回共享 HttpFetcher 会被 WAF 指纹挑战全灭；
@@ -155,4 +189,10 @@ timeout。凭据由 service 暂存（内存，10 分钟 TTL），bind 时消费�
   误判为用户改动而清空回执（曾致"登录成功却无反馈、无法绑定"）；
 - **精化是 store 合并规则的唯一受控例外**：其余路径维持"磁盘优先、合并不
   覆盖旧行"；
-- **精化与普通同步共用账号锁**：绕开锁会导致并发写与限流失控。
+- **精化与普通同步共用账号锁**：绕开锁会导致并发写与限流失控；
+- **题目页题名可能为空**：先取 `data.problem.name`，再回退
+  `data.translations["zh-CN"].name`，只取一个会偶发空题名；
+- **`data.filter.tag` 是二维数组**：`[[1]]` 是筛选回显，不是标签目录；
+  标签目录只有 `/_lfe/tags`；
+- **`/_lfe/tags` 只取 `type == 2`**：其余（区域/来源/时间/特殊题目/其他）
+  不是算法标签，混进搜题面板会给出大量无意义筛选。
