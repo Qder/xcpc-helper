@@ -6,7 +6,7 @@
 
 import { computed, reactive } from 'vue'
 import { ChevronDown, ExternalLink, Inbox, ListPlus, Trash2 } from 'lucide-vue-next'
-import { NButton, NPagination, NPopconfirm, NSpin, NTag } from 'naive-ui'
+import { NButton, NCheckbox, NPagination, NPopconfirm, NSpin, NTag } from 'naive-ui'
 import {
   difficultyLabel,
   failLabel,
@@ -14,7 +14,7 @@ import {
   statusLabel,
   statusTagType,
 } from '@/features/activity/model/review'
-import { canAddToTodo, showsTodoAction } from '@/features/activity/model/todo'
+import { canAddToTodo, canSelectForImport, showsTodoAction } from '@/features/activity/model/todo'
 import { pageCount, paged } from '@/features/activity/model/pagination'
 import { fetchReviewRecommend } from '@/features/activity/api'
 import { useActivity } from '@/features/activity/store'
@@ -30,6 +30,10 @@ const props = defineProps<{
   page: number
   /** 正在加入待办的行键（"platform/problemKey"），用于按钮 loading */
   todoPending?: string | null
+  /** 批量导入模式：显示勾选框，隐藏单条「待办」按钮 */
+  selecting?: boolean
+  /** 已勾选的行键集合（仅 selecting 时使用） */
+  selected?: ReadonlySet<string>
 }>()
 
 const emit = defineEmits<{
@@ -39,6 +43,10 @@ const emit = defineEmits<{
   remove: [item: ReviewItem]
   /** 加入待办（父级调接口，成功后就地标记 inTodo） */
   'add-todo': [item: ReviewItem]
+  /** 勾选/取消一行（key 为 "platform/problemKey"） */
+  'toggle-select': [key: string, checked: boolean]
+  /** 全选/取消全选本页（带本页可选行键，父级只并入/移除这些键） */
+  'toggle-select-page': [keys: string[], checked: boolean]
 }>()
 
 const { platformName } = useActivity()
@@ -49,6 +57,25 @@ const PAGE_SIZE = 25
 const hasItems = computed(() => props.items.length > 0)
 const totalPages = computed(() => pageCount(props.items.length, PAGE_SIZE))
 const rows = computed(() => paged(props.items, props.page, PAGE_SIZE))
+
+/** 当前页的可选行（不能加入待办的行不参与全选） */
+const pageSelectable = computed(() =>
+  rows.value.filter(canSelectForImport).map((i) => rowKey(i)),
+)
+const pageAllSelected = computed(
+  () =>
+    pageSelectable.value.length > 0 &&
+    pageSelectable.value.every((k) => props.selected?.has(k)),
+)
+const pageSomeSelected = computed(
+  () =>
+    pageSelectable.value.some((k) => props.selected?.has(k)) &&
+    !pageAllSelected.value,
+)
+
+function isSelected(item: ReviewItem): boolean {
+  return props.selected?.has(rowKey(item)) ?? false
+}
 
 /** 展开的推荐面板：key → 一次请求的状态（加载中 / 结果 / 失败文案） */
 interface RecommendState {
@@ -127,8 +154,37 @@ function emptyText(state: RecommendState | undefined): string {
       </NButton>
     </div>
 
+    <div class="list-head">
+      <NCheckbox
+        v-if="selecting && hasItems"
+        class="head-check"
+        :checked="pageAllSelected"
+        :indeterminate="pageSomeSelected"
+        :disabled="pageSelectable.length === 0"
+        @update:checked="emit('toggle-select-page', pageSelectable, $event)"
+      >
+        全选本页
+      </NCheckbox>
+      <span v-if="selecting" class="head-hint">
+        仅未通过 / 收录可加入待办，已选 {{ selected?.size ?? 0 }} 道
+      </span>
+    </div>
+
     <div v-for="item in rows" :key="rowKey(item)" class="review-block">
-      <article class="review-row">
+      <article
+        class="review-row"
+        :class="{ 'is-selecting': selecting, 'is-selected': selecting && isSelected(item) }"
+        @click="selecting ? emit('toggle-select', rowKey(item), !isSelected(item)) : undefined"
+      >
+        <NCheckbox
+          v-if="selecting"
+          class="row-check"
+          :checked="isSelected(item)"
+          :disabled="!canSelectForImport(item)"
+          :aria-label="`选择 ${item.problemName}`"
+          @click.stop
+          @update:checked="emit('toggle-select', rowKey(item), $event)"
+        />
         <span class="row-key">{{ item.problemKey }}</span>
         <a
           class="row-name"
@@ -147,7 +203,7 @@ function emptyText(state: RecommendState | undefined): string {
         <span class="row-fails">{{ failLabel(item) }}</span>
         <span class="row-time">{{ relativeDay(item.lastAttemptAt) }}</span>
         <NButton
-          v-if="showsTodoAction(item)"
+          v-if="showsTodoAction(item) && !selecting"
           class="row-todo"
           size="tiny"
           :quaternary="!canAddToTodo(item)"
@@ -159,7 +215,10 @@ function emptyText(state: RecommendState | undefined): string {
           <template #icon><ListPlus :size="13" /></template>
           {{ item.inTodo ? '已待办' : '待办' }}
         </NButton>
-        <NPopconfirm v-if="item.manual" @positive-click="emit('remove', item)">
+        <NPopconfirm
+          v-if="item.manual && !selecting"
+          @positive-click="emit('remove', item)"
+        >
           <template #trigger>
             <NButton class="row-delete" size="tiny" quaternary aria-label="删除收录">
               <Trash2 :size="13" />
@@ -168,7 +227,7 @@ function emptyText(state: RecommendState | undefined): string {
           从错题本移除这道收录题？
         </NPopconfirm>
         <NButton
-          v-if="item.canRecommend"
+          v-if="item.canRecommend && !selecting"
           class="row-toggle"
           size="tiny"
           quaternary
@@ -184,7 +243,7 @@ function emptyText(state: RecommendState | undefined): string {
         </NButton>
       </article>
 
-      <div v-if="expanded[rowKey(item)]" class="recommend-panel">
+      <div v-if="expanded[rowKey(item)] && !selecting" class="recommend-panel">
         <NSpin v-if="panels[rowKey(item)]?.loading" size="small" />
         <p v-else-if="panels[rowKey(item)]?.error" class="panel-hint error">
           {{ panels[rowKey(item)]?.error }}
@@ -236,6 +295,37 @@ function emptyText(state: RecommendState | undefined): string {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.list-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.list-head:empty {
+  display: none;
+}
+
+.head-hint {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.row-check {
+  flex: none;
+}
+
+.review-row.is-selecting {
+  cursor: pointer;
+}
+
+.review-row.is-selected {
+  border-color: var(--accent-soft);
+  background: var(--accent-softer);
 }
 
 .review-empty {

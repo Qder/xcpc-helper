@@ -1,12 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import {
+  batchResultMessage,
   canAddToTodo,
+  canSelectForImport,
   isActiveTag,
   markInTodo,
+  markManyInTodo,
   matchesTag,
   removeTodoItem,
+  selectableKeys,
+  selectionPayload,
   showsTodoAction,
   tagChipLabel,
+  toggleSelectAllKeys,
+  toggleSelection,
   toggleTag,
 } from '@/features/activity/model/todo'
 import type { ReviewItem, TodoItem } from '@/features/activity/types'
@@ -105,5 +112,128 @@ describe('markInTodo', () => {
     expect(next[0].inTodo).toBe(true)
     expect(next[1].inTodo).toBeUndefined()
     expect(items[0].inTodo).toBeUndefined() // 不改原数组元素
+  })
+})
+
+describe('批量导入：可选口径与勾选', () => {
+  it('可导入口径与单条「待办」按钮一致', () => {
+    expect(canSelectForImport(reviewItem({ status: 'unsolved' }))).toBe(true)
+    expect(canSelectForImport(reviewItem({ status: 'collected' }))).toBe(true)
+    expect(canSelectForImport(reviewItem({ status: 'struggled' }))).toBe(false)
+    expect(canSelectForImport(reviewItem({ inTodo: true }))).toBe(false)
+  })
+
+  it('selectableKeys 只留下可导入行，并带上平台前缀', () => {
+    const items = [
+      reviewItem({ platform: 'codeforces', problemKey: '2245B' }),
+      reviewItem({ problemKey: '2245C', status: 'struggled' }),
+      reviewItem({ platform: 'luogu', problemKey: 'P1001' }),
+    ]
+    expect(selectableKeys(items)).toEqual(['codeforces/2245B', 'luogu/P1001'])
+  })
+
+  it('toggleSelection 返回新集合，不改原集合', () => {
+    const start = new Set<string>()
+    const added = toggleSelection(start, 'codeforces/2245B', true)
+    expect(added.has('codeforces/2245B')).toBe(true)
+    expect(start.size).toBe(0)
+    expect(toggleSelection(added, 'codeforces/2245B', false).size).toBe(0)
+  })
+
+  it('全选只并入/移除传入的键，不清掉集合外已选行', () => {
+    const selected = new Set(['codeforces/9999Z']) // 别的页勾的
+    const pageKeys = ['codeforces/2245B', 'codeforces/2245C']
+
+    const on = toggleSelectAllKeys(selected, pageKeys, true)
+    expect([...on].sort()).toEqual(
+      ['codeforces/2245B', 'codeforces/2245C', 'codeforces/9999Z'].sort(),
+    )
+
+    const off = toggleSelectAllKeys(on, pageKeys, false)
+    expect([...off]).toEqual(['codeforces/9999Z'])
+  })
+
+  it('selectionPayload 按列表顺序输出，且过滤掉不可导入的行', () => {
+    const items = [
+      reviewItem({ platform: 'luogu', problemKey: 'P1001' }),
+      reviewItem({ platform: 'codeforces', problemKey: '2245B' }),
+      reviewItem({ problemKey: '2245C', status: 'struggled' }),
+    ]
+    const selected = new Set([
+      'luogu/P1001',
+      'codeforces/2245B',
+      'codeforces/2245C',
+    ])
+    const payload = selectionPayload(items, selected)
+    expect(payload.map((i) => [i.platform, i.problemKey])).toEqual([
+      ['luogu', 'P1001'],
+      ['codeforces', '2245B'],
+    ])
+  })
+
+  it('payload 带上画像快照，后端不必逐题再查平台', () => {
+    const items = [
+      reviewItem({
+        platform: 'codeforces',
+        problemKey: '2245B',
+        problemName: 'Xor',
+        problemUrl: 'https://codeforces.com/contest/2245/problem/B',
+        difficulty: 2100,
+      }),
+    ]
+    expect(selectionPayload(items, new Set(['codeforces/2245B']))).toEqual([
+      {
+        platform: 'codeforces',
+        problemKey: '2245B',
+        problemName: 'Xor',
+        problemUrl: 'https://codeforces.com/contest/2245/problem/B',
+        difficulty: 2100,
+      },
+    ])
+  })
+})
+
+describe('markManyInTodo', () => {
+  it('批量标记命中的行，空结果原样返回', () => {
+    const items = [
+      reviewItem({ problemKey: '2245B' }),
+      reviewItem({ problemKey: '2245C' }),
+      reviewItem({ platform: 'luogu', problemKey: 'P1001' }),
+    ]
+    const next = markManyInTodo(items, [
+      { platform: 'codeforces', problemKey: '2245B' },
+      { platform: 'luogu', problemKey: 'P1001' },
+    ])
+    expect(next.map((i) => i.inTodo)).toEqual([true, undefined, true])
+    expect(markManyInTodo(items, [])).toBe(items)
+  })
+
+  it('同号不同平台不会互相误标', () => {
+    const items = [
+      reviewItem({ platform: 'codeforces', problemKey: 'P1001' }),
+      reviewItem({ platform: 'luogu', problemKey: 'P1001' }),
+    ]
+    const next = markManyInTodo(items, [{ platform: 'luogu', problemKey: 'P1001' }])
+    expect(next[0].inTodo).toBeUndefined()
+    expect(next[1].inTodo).toBe(true)
+  })
+})
+
+describe('batchResultMessage', () => {
+  it('只说新增', () => {
+    expect(batchResultMessage(3, [])).toBe('已加入 3 道待办')
+  })
+
+  it('新增与跳过分开说清，并按原因计数', () => {
+    expect(
+      batchResultMessage(2, [{ reason: 'ac' }, { reason: 'exists' }, { reason: 'ac' }]),
+    ).toBe('已加入 2 道待办，跳过 2 道已 AC、1 道已在待办')
+  })
+
+  it('全部跳过时不说成成功', () => {
+    expect(batchResultMessage(0, [{ reason: 'exists' }])).toBe(
+      '没有新增：1 道已在待办',
+    )
+    expect(batchResultMessage(0, [])).toBe('没有可加入的题目')
   })
 })

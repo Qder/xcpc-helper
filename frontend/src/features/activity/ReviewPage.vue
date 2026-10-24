@@ -5,18 +5,28 @@
  * 不写进网址（错题本不是主视图，刷新回到默认全部）。 */
 
 import { computed, onMounted, ref, watch } from 'vue'
-import { ChartNoAxesColumn, Search } from 'lucide-vue-next'
+import { ChartNoAxesColumn, ListChecks, Search } from 'lucide-vue-next'
 import { NButton, NSkeleton, useMessage } from 'naive-ui'
 import PlatformTabs from '@/features/activity/components/PlatformTabs.vue'
 import ReviewList from '@/features/activity/components/ReviewList.vue'
 import ReviewManualAdd from '@/features/activity/components/ReviewManualAdd.vue'
 import ReviewTagSearch from '@/features/activity/components/ReviewTagSearch.vue'
-import { fetchReview, addTodo, removeReviewManual } from '@/features/activity/api'
+import { fetchReview, addTodo, addTodoBatch, removeReviewManual } from '@/features/activity/api'
 import { removeReviewItem, upsertReviewItem } from '@/features/activity/model/review'
-import { markInTodo } from '@/features/activity/model/todo'
+import {
+  batchResultMessage,
+  canSelectForImport,
+  markInTodo,
+  markManyInTodo,
+  selectableKeys,
+  selectionPayload,
+  toggleSelectAllKeys,
+  toggleSelection,
+} from '@/features/activity/model/todo'
 import { useUserGroups } from '@/features/activity/profile'
 import { useActivity, type PlatformScope } from '@/features/activity/store'
 import type { ReviewData, ReviewFilter, ReviewItem } from '@/features/activity/types'
+import { ApiError } from '@/shared/api/client'
 
 const { init, activePlatform, setPlatform } = useActivity()
 const { currentKey } = useUserGroups()
@@ -29,6 +39,16 @@ const page = ref(1)
 const tagSearchOpen = ref(false)
 /** 正在加入待办的行键（"platform/problemKey"），用于按钮 loading 防重复点击 */
 const todoPending = ref<string | null>(null)
+/** 批量导入模式：行前出现勾选框，单条按钮与推荐面板让位 */
+const selecting = ref(false)
+/** 已勾选的行键集合（"platform/problemKey"） */
+const selected = ref<Set<string>>(new Set())
+const importing = ref(false)
+
+/** 当前列表里可导入的行（与勾选框可选口径一致） */
+const selectableCount = computed(() =>
+  (data.value?.items ?? []).filter(canSelectForImport).length,
+)
 
 const STATUS_OPTIONS: { value: ReviewFilter; label: string }[] = [
   { value: 'all', label: '全部' },
@@ -140,6 +160,72 @@ async function onAddTodo(item: ReviewItem): Promise<void> {
     todoPending.value = null
   }
 }
+
+/* ---------- 批量导入（多选 → 待办） ---------- */
+
+/** 进入多选：清空上次的选择，避免带着上一次的残留提交 */
+function enterSelecting(): void {
+  selected.value = new Set()
+  selecting.value = true
+}
+
+function exitSelecting(): void {
+  if (importing.value) return
+  selecting.value = false
+  selected.value = new Set()
+}
+
+function onToggleSelect(key: string, checked: boolean): void {
+  if (!selecting.value) return
+  selected.value = toggleSelection(selected.value, key, checked)
+}
+
+/** 全选作用域：整个错题本列表（不只是当前页），否则跨页勾选很别扭 */
+function onToggleSelectAll(checked: boolean): void {
+  const keys = selectableKeys(data.value?.items ?? [])
+  selected.value = toggleSelectAllKeys(selected.value, keys, checked)
+}
+
+/** 列表页头的「全选本页」：只作用于当前页的可选行 */
+function onToggleSelectPage(keys: string[], checked: boolean): void {
+  selected.value = toggleSelectAllKeys(selected.value, keys, checked)
+}
+
+/**
+ * 批量导入：一次请求把勾选的题推进待办。
+ * 已 AC / 已在待办由后端逐项跳过并回报原因，前端按结果分开提示，
+ * 不把「跳过」当失败，也不把「全部跳过」说成成功。
+ */
+async function onImport(): Promise<void> {
+  if (importing.value) return
+  const payload = selectionPayload(data.value?.items ?? [], selected.value)
+  if (payload.length === 0) {
+    message.warning('请先勾选要加入待办的题目')
+    return
+  }
+  importing.value = true
+  try {
+    const res = await addTodoBatch(payload)
+    if (data.value) {
+      data.value = {
+        ...data.value,
+        items: markManyInTodo(data.value.items, res.added),
+      }
+    }
+    selected.value = new Set()
+    const text = batchResultMessage(res.added.length, res.skipped)
+    if (res.added.length > 0) message.success(text)
+    else message.warning(text)
+    if (res.added.length > 0) selecting.value = false
+  } catch (e) {
+    // 400（空选择 / 平台不存在）与网络错误都用后端 detail，前端不猜原因
+    message.error(
+      e instanceof ApiError || e instanceof Error ? e.message : '导入失败，请稍后重试',
+    )
+  } finally {
+    importing.value = false
+  }
+}
 </script>
 
 <template>
@@ -168,6 +254,39 @@ async function onAddTodo(item: ReviewItem): Promise<void> {
         </button>
       </div>
       <span class="review-count">{{ data ? `${data.items.length} 道` : '' }}</span>
+      <NButton
+        v-if="!selecting"
+        class="import-enter"
+        size="small"
+        secondary
+        :disabled="selectableCount === 0"
+        @click="enterSelecting"
+      >
+        <template #icon><ListChecks :size="14" /></template>
+        导入待办
+      </NButton>
+    </div>
+
+    <div v-if="selecting" class="import-bar">
+      <span class="import-hint">勾选要加入待办的题（已选 {{ selected.size }} 道）</span>
+      <span class="import-spacer" />
+      <NButton size="small" :disabled="importing" @click="exitSelecting">取消</NButton>
+      <NButton
+        size="small"
+        :disabled="importing || selectableCount === 0"
+        @click="onToggleSelectAll(true)"
+      >
+        全选可导入
+      </NButton>
+      <NButton
+        size="small"
+        type="primary"
+        :loading="importing"
+        :disabled="selected.size === 0"
+        @click="onImport"
+      >
+        加入待办{{ selected.size ? ` ${selected.size}` : '' }}
+      </NButton>
     </div>
 
     <section class="review-panel">
@@ -189,9 +308,13 @@ async function onAddTodo(item: ReviewItem): Promise<void> {
         :empty-hint="emptyHint"
         :empty-action="emptyAction"
         :todo-pending="todoPending"
+        :selecting="selecting"
+        :selected="selected"
         @empty-action="onEmptyAction"
         @remove="onRemove"
         @add-todo="onAddTodo"
+        @toggle-select="onToggleSelect"
+        @toggle-select-page="onToggleSelectPage"
       />
     </section>
 
@@ -269,6 +392,35 @@ async function onAddTodo(item: ReviewItem): Promise<void> {
   font-size: 12px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+}
+
+/* 计数已用 margin-left: auto 顶到右侧，导入按钮跟在它后面 */
+.review-count + .import-enter {
+  margin-left: 0;
+}
+
+.import-enter {
+  flex: none;
+}
+
+.import-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  padding: 7px 12px;
+  border: 1px solid var(--accent-soft);
+  border-radius: 10px;
+  background: var(--accent-softer);
+  font-size: 12.5px;
+}
+
+.import-hint {
+  color: var(--text);
+}
+
+.import-spacer {
+  flex: 1;
 }
 
 .review-panel {

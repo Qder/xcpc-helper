@@ -17,6 +17,8 @@ import type {
   SearchProblemsData,
   SubmissionEntry,
   TodoAddResult,
+  TodoBatchItem,
+  TodoBatchResult,
   TodoData,
 } from '@/features/activity/types'
 import type { PlatformScope } from '@/features/activity/store'
@@ -236,6 +238,15 @@ export function addTodo(platform: string, problemKey: string): Promise<TodoAddRe
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ platform, problemKey }),
+  })
+}
+
+/** 批量加入待办（错题本多选导入）；已 AC / 已在待办由后端逐项跳过并回报 */
+export function addTodoBatch(items: TodoBatchItem[]): Promise<TodoBatchResult> {
+  return request<TodoBatchResult>('/activity/todo/batch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ items }),
   })
 }
 

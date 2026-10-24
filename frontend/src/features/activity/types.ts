@@ -222,3 +222,27 @@ export interface TodoAddResult {
   item: TodoItem
   created: boolean
 }
+
+/** 批量导入的跳过原因：ac = 已 AC 不该进待办；exists = 已在待办（幂等命中） */
+export type TodoSkipReason = 'ac' | 'exists'
+
+export interface TodoBatchSkip {
+  platform: PlatformId
+  problemKey: string
+  reason: TodoSkipReason
+}
+
+/** 批量导入结果：added 为真正新建的，skipped 为跳过的（不整批失败） */
+export interface TodoBatchResult {
+  added: TodoItem[]
+  skipped: TodoBatchSkip[]
+}
+
+/** 批量导入的一项：带上错题本已有的画像快照，省掉后端逐题查询 */
+export interface TodoBatchItem {
+  platform: string
+  problemKey: string
+  problemName?: string
+  problemUrl?: string
+  difficulty?: number | string | null
+}
