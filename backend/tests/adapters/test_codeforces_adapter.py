@@ -441,3 +441,47 @@ def test_to_submission_null_problem_name():
     assert s.problem_name == ""
     # problem_key 走 contestId + index，不受题名缺失影响
     assert s.problem_key == "2245F"
+
+
+# ===== 题单（PROBLEMSET） =====
+
+PROBLEMSET = json.loads(
+    (FIXTURES / "cf_problemset_sample.json").read_text(encoding="utf-8")
+)
+
+
+async def test_fetch_problemset_parses_tags_and_skips_incomplete():
+    """题单 result 是对象：解析 problems，跳过缺 contestId/index 的记录。"""
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/problemset.problems")
+        return ok_json(PROBLEMSET)
+
+    adapter, fetcher = make_adapter(handler)
+    try:
+        items = await adapter.fetch_problemset()
+    finally:
+        await fetcher.aclose()
+
+    assert [p.problem_key for p in items] == ["2245A", "2245B", "1879E", "100A"]
+    first = items[0]
+    assert first.name == "X Axis"
+    assert first.rating == 800
+    assert first.tags == ["math", "sortings"]
+    assert first.url == "https://codeforces.com/contest/2245/problem/A"
+    # 缺 rating 的题保留（rating 为 None，标签仍可用于推荐）
+    assert items[3].rating is None
+
+
+async def test_fetch_problemset_rejects_malformed_result():
+    """result 形状不对（列表而非对象）→ PlatformError，不静默吞。"""
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return ok_json({"status": "OK", "result": []})
+
+    adapter, fetcher = make_adapter(handler)
+    try:
+        with pytest.raises(PlatformError):
+            await adapter.fetch_problemset()
+    finally:
+        await fetcher.aclose()

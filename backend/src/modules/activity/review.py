@@ -11,7 +11,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Literal
 
-from adapters.base import Verdict
+from adapters.base import ProblemMeta, Verdict
 from modules.activity.models import Submission
 
 # 挣扎题阈值：首次 AC 之前的失败提交数达到该值即视为"做了很多次才过"
@@ -116,3 +116,56 @@ def review_records(submissions: Iterable[Submission]) -> list[ProblemRecord]:
 def solved_keys(submissions: Iterable[Submission]) -> set[tuple[str, str]]:
     """已 AC 的题目集合（推荐候选排除用）。"""
     return {_group_key(s) for s in submissions if s.verdict == Verdict.AC}
+
+
+# ===== 同类推荐（打分与过滤，纯函数） =====
+
+# 推荐条数上限
+RECOMMEND_LIMIT = 5
+# 难度窗口（相对源题）：略低到略高，避免推同题或过难的题
+RATING_LOW = 200
+RATING_HIGH = 100
+# 候选缺难度时的排序距离：排在所有已知难度的匹配之后（不臆断其难度合适）
+UNKNOWN_RATING_DISTANCE = 10**6
+
+
+def recommend_problems(
+    *,
+    target: ProblemMeta,
+    candidates: Iterable[ProblemMeta],
+    solved: set[str],
+    limit: int = RECOMMEND_LIMIT,
+) -> list[ProblemMeta]:
+    """从题单里挑同类题：至少 1 个共同 tag + 难度相近 + 未 AC 过。
+
+    - 排除源题本身与已 AC 的题（solved 为 problem_key 集合）；
+    - 源题无 rating 或候选无 rating 时，只用标签匹配（不因缺难度而全丢）；
+    - 排序：共同标签数降序 → rating 差升序 → 题号（保证结果稳定）；
+      候选缺 rating 时距离记为 UNKNOWN_RATING_DISTANCE，排在已知难度之后。
+    """
+    target_tags = set(target.tags)
+    if not target_tags:
+        return []
+
+    scored: list[tuple[int, int, str, ProblemMeta]] = []
+    for cand in candidates:
+        if cand.problem_key == target.problem_key or cand.problem_key in solved:
+            continue
+        shared = len(target_tags & set(cand.tags))
+        if shared == 0:
+            continue
+        if target.rating is not None and cand.rating is not None:
+            diff = cand.rating - target.rating
+            if diff < -RATING_LOW or diff > RATING_HIGH:
+                continue
+            distance = abs(diff)
+        elif target.rating is None:
+            # 源题无难度：无从比较，所有候选同权（只按标签与题号排）
+            distance = 0
+        else:
+            # 源题有难度但候选没有：不臆断难度合适，排到已知难度之后
+            distance = UNKNOWN_RATING_DISTANCE
+        scored.append((-shared, distance, cand.problem_key, cand))
+
+    scored.sort(key=lambda row: (row[0], row[1], row[2]))
+    return [row[3] for row in scored[:limit]]

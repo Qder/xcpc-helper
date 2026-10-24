@@ -124,6 +124,20 @@ class ContestInfo(BaseModel):
     url: str | None = None
 
 
+class ProblemMeta(BaseModel):
+    """题单中的一道题（题目画像，无用户维度）。
+
+    仅供错题本同类推荐使用：tags 为平台原生标签（不跨平台归一），
+    rating 为平台原始难度值（CF 为分值，缺难度平台为 None）。
+    """
+
+    problem_key: str  # 平台内题目标识（与 PlatformSubmission.problem_key 同口径）
+    name: str
+    rating: int | None = None
+    tags: list[str] = Field(default_factory=list)
+    url: str = ""
+
+
 class Credentials(BaseModel):
     """平台凭据（第一期匿名平台恒为空；cookie 授权平台预留）。
 
@@ -234,6 +248,14 @@ class PlatformAdapter:
     async def fetch_contests(self) -> list[ContestInfo]:
         """比赛信息（平台级数据，未来 contest 功能消费）。仅具备 CONTESTS 能力时实现。"""
         raise CapabilityNotSupportedError(f"{self.platform_id} 不支持比赛信息")
+
+    async def fetch_problemset(self) -> list[ProblemMeta]:
+        """平台题单（标签 / 难度 / 外链，平台级数据，无 handle）。
+
+        错题本同类推荐消费；调用方负责缓存与 TTL（不在此层做产品策略）。
+        仅具备 PROBLEMSET 能力时实现。
+        """
+        raise CapabilityNotSupportedError(f"{self.platform_id} 不支持题单")
 
     async def fetch_submission_verdict(
         self, record_id: str, credentials: Credentials | None = None

@@ -12,6 +12,7 @@ import pytest
 from adapters.base import (
     BrowserLoginCancelledError,
     Credentials,
+    PlatformError,
     SyncBatch,
     UserInfo,
     Verdict,
@@ -744,7 +745,7 @@ async def test_review_lists_unsolved_after_sync(service: ActivityService):
     item = out.items[0]
     assert item.status == "unsolved"
     assert item.failCount == 1
-    assert item.canRecommend is False  # 本阶段尚未接入题单能力
+    assert item.canRecommend is True  # Codeforces 已具备题单能力
 
 
 async def test_review_status_filter(service: ActivityService):
@@ -773,3 +774,148 @@ async def test_review_platform_filter(service: ActivityService):
 
     assert len(service.review_list("codeforces", "all").items) == 1
     assert service.review_list("atcoder", "all").items == []
+
+
+# ===== 同类推荐（题单缓存 + 打分） =====
+
+PROBLEMSET = json.loads(
+    (FIXTURES / "cf_problemset_sample.json").read_text(encoding="utf-8")
+)
+
+
+def make_problemset_handler(
+    status_rows: list[dict] | None = None,
+    problemset_body: object | None = None,
+    on_problemset=None,
+):
+    """在 CF 提交/用户信息 handler 基础上，追加 problemset 端点。"""
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/user.info"):
+            return ok_json(INFO_OK)
+        if request.url.path.endswith("/user.status"):
+            return ok_json({"status": "OK", "result": status_rows or []})
+        if request.url.path.endswith("/problemset.problems"):
+            if on_problemset is not None:
+                on_problemset()
+            if problemset_body is None:
+                return httpx.Response(503)
+            return ok_json(problemset_body)
+        return httpx.Response(404)
+
+    return handler
+
+
+async def make_problemset_service(tmp_path, handler) -> ActivityService:
+    fetcher = HttpFetcher(
+        transport=httpx.MockTransport(handler), base_backoff=0.01
+    )
+    # data_dir 指向 tmp：题单缓存落在测试隔离目录，不污染真实 data/cache
+    svc = ActivityService(
+        Settings(user_data_dir=tmp_path / "user", data_dir=tmp_path / "data"),
+        fetcher,
+    )
+    svc._adapters["codeforces"].min_interval = 0
+    return svc
+
+
+async def test_recommend_matches_tags_and_skips_solved(tmp_path):
+    """2245A 的 tags=math/sortings：推荐同标签题，排除已 AC 与源题。"""
+    rows = [cf_row(1, sys_today_ts(0, 10), "OK", "A")]  # 2245A 已 AC
+    svc = await make_problemset_service(
+        tmp_path, make_problemset_handler(rows, PROBLEMSET)
+    )
+    try:
+        await svc.bind(BindIn(platform="codeforces", handle="demo"))
+        await wait_sync_done(svc)
+
+        out = await svc.recommend("codeforces", "2245B")
+        keys = [i.problemKey for i in out.items]
+        # 2245B 的 tags 是 constructive/greedy，题单里没有同标签题 → 空
+        assert keys == []
+        assert out.stale is False
+
+        out = await svc.recommend("codeforces", "2245A")
+        keys = [i.problemKey for i in out.items]
+        # 源题排除；2245B 标签不同；1879E 差 1000 超出窗口；
+        # 100A 同为 math（无 rating，排最后但仍保留）
+        assert "2245A" not in keys
+        assert keys == ["100A"]
+    finally:
+        await svc.aclose()
+
+
+async def test_recommend_uses_cache_within_ttl(tmp_path):
+    """TTL 内第二次推荐不再请求平台。"""
+    calls = {"n": 0}
+
+    def counting():
+        calls["n"] += 1
+
+    svc = await make_problemset_service(
+        tmp_path, make_problemset_handler([], PROBLEMSET, counting)
+    )
+    try:
+        await svc.bind(BindIn(platform="codeforces", handle="demo"))
+        await wait_sync_done(svc)
+
+        await svc.recommend("codeforces", "2245A")
+        assert calls["n"] == 1
+        await svc.recommend("codeforces", "2245A")
+        assert calls["n"] == 1  # 命中缓存
+    finally:
+        await svc.aclose()
+
+
+async def test_recommend_falls_back_to_stale_cache(tmp_path):
+    """刷新失败但有旧缓存：返回 stale=True，仍可用。"""
+    svc = await make_problemset_service(
+        tmp_path, make_problemset_handler([], PROBLEMSET)
+    )
+    try:
+        await svc.bind(BindIn(platform="codeforces", handle="demo"))
+        await wait_sync_done(svc)
+        await svc.recommend("codeforces", "2245A")  # 写入缓存
+
+        # TTL 置 0 强制过期，且让平台故障
+        svc._settings.activity_problemset_ttl_seconds = 0
+        svc._adapters["codeforces"].fetch_problemset = _failing_problemset
+        out = await svc.recommend("codeforces", "2245A")
+        assert out.stale is True
+        assert [i.problemKey for i in out.items] == ["100A"]
+    finally:
+        await svc.aclose()
+
+
+async def test_recommend_without_cache_and_platform_down_is_empty(tmp_path):
+    """无缓存且平台故障：返回空列表（不抛错，错题本不受影响）。"""
+    svc = await make_problemset_service(
+        tmp_path, make_problemset_handler([], None)
+    )
+    try:
+        await svc.bind(BindIn(platform="codeforces", handle="demo"))
+        await wait_sync_done(svc)
+        out = await svc.recommend("codeforces", "2245A")
+        assert out.items == []
+    finally:
+        await svc.aclose()
+
+
+async def test_recommend_unsupported_platform_is_bad_request(service: ActivityService):
+    with pytest.raises(BadRequestError):
+        await service.recommend("atcoder", "abc001_a")
+
+
+async def test_recommend_unknown_problem_returns_empty(tmp_path):
+    svc = await make_problemset_service(
+        tmp_path, make_problemset_handler([], PROBLEMSET)
+    )
+    try:
+        out = await svc.recommend("codeforces", "9999Z")
+        assert out.items == []
+    finally:
+        await svc.aclose()
+
+
+async def _failing_problemset():
+    raise PlatformError("题单接口不可用")

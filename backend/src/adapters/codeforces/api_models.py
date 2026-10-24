@@ -49,3 +49,32 @@ class CfSubmissionRow(BaseModel):
     problem: CfProblem | None = None
     programmingLanguage: str = ""
     verdict: str = ""
+
+
+class CfProblemsetProblem(BaseModel):
+    """problemset.problems 中的一道题（题目画像，含标签）。"""
+
+    contestId: int | None = None
+    index: str | None = None
+    name: str | None = None
+    rating: int | None = None
+    tags: list[str] = Field(default_factory=list)
+
+
+class CfProblemsetResult(BaseModel):
+    """problemset.problems 的 result。
+
+    注意与 user.status 不同：外层 result 是**对象**（含 problems 与
+    problemStatistics 两个列表），不是列表，故不能复用 CfEnvelope[list]。
+    只需 problems，problemStatistics 忽略。
+    """
+
+    problems: list[CfProblemsetProblem] = Field(default_factory=list)
+
+
+class CfProblemsetEnvelope(BaseModel):
+    """题单信封：result 为对象（独立模型，不复用列表信封的 result 定义）。"""
+
+    status: str = ""
+    comment: str = ""
+    result: CfProblemsetResult = Field(default_factory=CfProblemsetResult)

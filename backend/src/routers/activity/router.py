@@ -19,6 +19,7 @@ from modules.activity.schemas import (
     PlatformsOut,
     ProfileOut,
     ProfileUpdateIn,
+    RecommendOut,
     RefineConfigIn,
     RefineStatusOut,
     ReviewOut,
@@ -188,6 +189,16 @@ async def get_review(
 ) -> ReviewOut:
     """错题本：未通过 + 挣扎题（纯本地聚合，不触发同步）。"""
     return service.review_list(platform, status)
+
+
+@router.get("/review/recommend", response_model=RecommendOut)
+async def get_recommend(
+    service: ServiceDep,
+    platform: Annotated[str, Query()],
+    problemKey: Annotated[str, Query()],
+) -> RecommendOut:
+    """同类推荐：按题单标签与难度挑未 AC 过的题（平台须具备题单能力）。"""
+    return await service.recommend(platform, problemKey)
 
 
 @router.post("/sync", status_code=202)

@@ -33,7 +33,7 @@ from core.exceptions import (
     ConflictError,
     NotFoundError,
 )
-from modules.activity import aggregate, review
+from modules.activity import aggregate, problemset, review
 from modules.activity import store as activity_store
 from modules.activity.models import DEFAULT_USER_ID, Account, Submission
 from modules.activity.refine import RefineEngine
@@ -52,6 +52,8 @@ from modules.activity.schemas import (
     PlatformsOut,
     ProfileOut,
     ProfileUpdateIn,
+    RecommendItemOut,
+    RecommendOut,
     RefineStatusOut,
     ReviewItemOut,
     ReviewOut,
@@ -546,6 +548,74 @@ class ActivityService:
             ],
             bound=bool(profile.accounts),
             synced=any(acc.last_synced_at is not None for acc in profile.accounts),
+        )
+
+    async def recommend(self, platform: str, problem_key: str) -> RecommendOut:
+        """同类推荐：按共同标签 + 相近难度从题单缓存里挑未 AC 过的题。
+
+        与错题本隔离：推荐失败（缓存与刷新都不可用）只让本次推荐为空，
+        错题列表照常工作。缓存过期时在此懒刷新，失败保留旧缓存。
+        """
+        adapter = self._adapter(platform)
+        if Capability.PROBLEMSET not in adapter.capabilities:
+            raise BadRequestError(f"平台 {platform} 不支持题单，无法推荐同类题")
+
+        cached = await self._problemset(platform)
+        if cached is None:
+            return RecommendOut(items=[])
+
+        target = next(
+            (p for p in cached.items if p.problem_key == problem_key), None
+        )
+        if target is None:
+            # 题单未命中源题（如新赛题尚未进入题单）：空列表，不报错
+            return RecommendOut(items=[])
+
+        submissions = self._submissions(platform)
+        solved = {
+            s.problem_key for s in submissions if s.verdict == Verdict.AC
+        }
+        picked = review.recommend_problems(
+            target=target, candidates=cached.items, solved=solved
+        )
+        return RecommendOut(
+            items=[
+                RecommendItemOut(
+                    problemKey=p.problem_key,
+                    name=p.name,
+                    rating=p.rating,
+                    tags=list(p.tags),
+                    url=p.url,
+                )
+                for p in picked
+            ],
+            stale=cached.stale,
+        )
+
+    async def _problemset(self, platform: str) -> problemset.CachedProblemset | None:
+        """取题单缓存：TTL 内直接用；过期则刷新，刷新失败回退旧缓存（stale）。"""
+        cached = problemset.load(self._settings.data_dir, platform)
+        if cached is not None and problemset.is_fresh(
+            cached, self._settings.activity_problemset_ttl_seconds
+        ):
+            return cached
+
+        adapter = self._adapter(platform)
+        try:
+            items = await adapter.fetch_problemset()
+        except PlatformError as exc:
+            # 平台故障：有旧缓存就降级使用（标记 stale），没有则不可用
+            logger.warning("题单刷新失败 [%s]：%s", platform, exc)
+            if cached is None:
+                return None
+            return problemset.CachedProblemset(
+                items=cached.items, fetched_at=cached.fetched_at, stale=True
+            )
+        problemset.save(self._settings.data_dir, platform, items)
+        return problemset.CachedProblemset(
+            items=items,
+            fetched_at=int(time.time()),
+            stale=False,
         )
 
     def submissions(

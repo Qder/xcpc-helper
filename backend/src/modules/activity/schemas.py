@@ -131,6 +131,21 @@ class ReviewOut(BaseModel):
     synced: bool  # 是否至少有一个账号同步成功过
 
 
+class RecommendItemOut(BaseModel):
+    """同类推荐题（题单里的题目画像）。"""
+
+    problemKey: str
+    name: str
+    rating: int | None = None  # 平台原始难度值（CF 为分值）
+    tags: list[str]
+    url: str
+
+
+class RecommendOut(BaseModel):
+    items: list[RecommendItemOut]
+    stale: bool = False  # true = 本次用的是过期缓存（刷新失败后的降级）
+
+
 # ===== 浏览器一键登录（cookie 平台） =====
 
 BrowserLoginStateOut = Literal["waiting", "success", "canceled", "timeout", "error"]

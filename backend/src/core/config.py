@@ -45,6 +45,8 @@ class Settings(BaseSettings):
     activity_full_min_rows: int = 5000
     # 应用启动时自动同步当前用户组全部账号（后台执行，失败降级为账号诊断）
     activity_sync_on_startup: bool = True
+    # 题单缓存 TTL（秒）：错题本同类推荐用，过期后在下一次推荐请求时懒刷新
+    activity_problemset_ttl_seconds: int = 24 * 3600
 
     # 是否监听 content/ 变更并自动重建索引
     watch_enabled: bool = True

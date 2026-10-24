@@ -38,6 +38,9 @@ backend/data/user/**/.tmp-*
 # 格式样例见 backend/data/user/example/，随样例文件入 git）
 backend/data/user/*/
 
+# 训练统计：题单等可删除重建的缓存（错题本同类推荐用）
+backend/data/cache/
+
 # 可视化写操作的原子暂存目录（正常会自动清理，防御崩溃残留）
 backend/content/.tmp-*/
 

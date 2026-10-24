@@ -18,6 +18,7 @@ from adapters.base import (
     PlatformAdapter,
     PlatformError,
     PlatformSubmission,
+    ProblemMeta,
     ProgressCallback,
     SyncBatch,
     UserInfo,
@@ -25,6 +26,7 @@ from adapters.base import (
 )
 from adapters.codeforces.api_models import (
     CfEnvelope,
+    CfProblemsetEnvelope,
     CfSubmissionRow,
     CfUserInfo,
 )
@@ -38,6 +40,7 @@ T = TypeVar("T")
 API_BASE = "https://codeforces.com/api"
 STATUS_URL = f"{API_BASE}/user.status"
 INFO_URL = f"{API_BASE}/user.info"
+PROBLEMSET_URL = f"{API_BASE}/problemset.problems"
 
 PAGE_SIZE = 1000  # user.status 单页上限
 MAX_PAGES = 200  # 安全护栏（20 万条），正常路径不会触发
@@ -46,7 +49,9 @@ MAX_PAGES = 200  # 安全护栏（20 万条），正常路径不会触发
 class CodeforcesAdapter(PlatformAdapter):
     platform_id = "codeforces"
     name = "Codeforces"
-    capabilities = frozenset({Capability.SUBMISSIONS, Capability.USER_INFO})
+    capabilities = frozenset(
+        {Capability.SUBMISSIONS, Capability.USER_INFO, Capability.PROBLEMSET}
+    )
     auth = AuthMode.NONE
     min_interval = 2.0  # 官方建议请求间隔 ≥ 2 秒
     homepage_url = "https://codeforces.com"
@@ -159,7 +164,46 @@ class CodeforcesAdapter(PlatformAdapter):
                 return
         yield SyncBatch(done=True)
 
+    # ===== 题单（PROBLEMSET，错题本同类推荐消费） =====
+
+    async def fetch_problemset(self) -> list[ProblemMeta]:
+        """拉取全站题单（problemset.problems）。
+
+        一次请求返回全部题目画像（含 tags 与 rating），无分页。
+        缺 contestId/index 的记录无法与提交对齐，直接跳过。
+        """
+        data = await self._fetcher.get_json(
+            PROBLEMSET_URL,
+            platform=self.platform_id,
+            min_interval=self.min_interval,
+            should_retry=self._should_retry_envelope,
+        )
+        envelope = self._parse_problemset(data)
+        self._check_envelope(envelope)
+        out: list[ProblemMeta] = []
+        for p in envelope.result.problems:
+            if p.contestId is None or not p.index:
+                continue
+            out.append(
+                ProblemMeta(
+                    problem_key=problem_key(p.contestId, p.index, p.name or ""),
+                    name=p.name or "",
+                    rating=p.rating,
+                    tags=list(p.tags),
+                    url=problem_url(p.contestId, p.index),
+                )
+            )
+        return out
+
     # ===== 内部 =====
+
+    @staticmethod
+    def _parse_problemset(data: Any) -> CfProblemsetEnvelope:
+        """题单信封（result 为对象，单独类型化，不复用列表信封）。"""
+        try:
+            return CfProblemsetEnvelope.model_validate(data)
+        except ValidationError as exc:
+            raise PlatformError(f"Codeforces API 响应格式异常: {exc}") from exc
 
     @staticmethod
     def _parse_envelope(data: Any, item_type: type[T]) -> CfEnvelope[T]:

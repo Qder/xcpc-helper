@@ -1,0 +1,53 @@
+{
+  "status": "OK",
+  "result": {
+    "problems": [
+      {
+        "contestId": 2245,
+        "index": "A",
+        "name": "X Axis",
+        "type": "PROGRAMMING",
+        "rating": 800,
+        "tags": ["math", "sortings"]
+      },
+      {
+        "contestId": 2245,
+        "index": "B",
+        "name": "Two Digit Strings",
+        "type": "PROGRAMMING",
+        "rating": 1600,
+        "tags": ["constructive algorithms", "greedy"]
+      },
+      {
+        "contestId": 1879,
+        "index": "E",
+        "name": "Another MEX Problem",
+        "type": "PROGRAMMING",
+        "rating": 1800,
+        "tags": ["math"]
+      },
+      {
+        "contestId": 100,
+        "index": "A",
+        "name": "No Rating Problem",
+        "type": "PROGRAMMING",
+        "tags": ["math"]
+      },
+      {
+        "contestId": null,
+        "index": null,
+        "name": "Detached Problem",
+        "type": "PROGRAMMING",
+        "rating": 1200,
+        "tags": ["math"]
+      }
+    ],
+    "problemStatistics": [
+      {
+        "contestId": 2245,
+        "index": "A",
+        "solvedCount": 1234
+      }
+    ]
+  }
+}
