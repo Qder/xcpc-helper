@@ -43,7 +43,7 @@ async def list_templates(
     category: Annotated[str | None, Query(description="分类目录名")] = None,
     tags: Annotated[list[str] | None, Query(description="标签过滤，多值取交集")] = None,
     keyword: Annotated[str | None, Query(description="关键词，搜标题/标签/说明/代码")] = None,
-    sort: Annotated[SortMode, Query(description="排序方式")] = "priority",
+    sort: Annotated[SortMode, Query(description="排序方式，缺省 difficulty（难度降序）")] = "difficulty",
     has_visual: Annotated[
         bool | None, Query(description="true 时只返回至少一个版本有可视化的模板")
     ] = None,

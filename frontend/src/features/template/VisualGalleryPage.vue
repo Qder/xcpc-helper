@@ -12,7 +12,7 @@ import type { SortMode, TemplateSummary } from '@/features/template/types'
 const router = useRouter()
 const keyword = ref('')
 const category = ref('all')
-const sortMode = ref<SortMode>('priority')
+const sortMode = ref<SortMode>('difficulty')
 const loading = ref(false)
 const errorText = ref<string | null>(null)
 const items = ref<TemplateSummary[]>([])

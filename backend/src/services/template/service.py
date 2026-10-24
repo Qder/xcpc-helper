@@ -61,7 +61,7 @@ class TemplateService:
         category: str | None = None,
         tags: list[str] | None = None,
         keyword: str | None = None,
-        sort: SortMode = "priority",
+        sort: SortMode = "difficulty",
         has_visual: bool | None = None,
     ) -> list[TemplateSummary]:
         db = self._settings.db_path
@@ -387,8 +387,8 @@ def _sort_summaries(items: list[TemplateSummary], sort: SortMode) -> list[Templa
             reverse=True,
         )
     if sort == "difficulty":
-        # 难度升序（简单在前），同分按名称
-        return sorted(items, key=lambda t: (t.difficulty, t.name.lower()))
+        # 难度降序（难的在前），同分按名称
+        return sorted(items, key=lambda t: (-t.difficulty, t.name.lower()))
     # priority：优先级降序，其次按更新日期
     return sorted(
         items,

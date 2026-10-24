@@ -35,7 +35,7 @@ const listError = ref<string | null>(null)
 const initialized = ref(false)
 
 const detailCache = new Map<string, TemplateDetail>()
-let currentQuery: TemplateQuery = { sort: 'priority' }
+let currentQuery: TemplateQuery = { sort: 'difficulty' }
 
 async function loadList(query?: TemplateQuery): Promise<void> {
   if (query) currentQuery = query

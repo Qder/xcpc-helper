@@ -29,20 +29,20 @@ def client(service: TemplateService) -> TestClient:
 
 
 def test_list_sorted_by_priority(service: TemplateService) -> None:
-    items = service.list_templates()
+    items = service.list_templates(sort="priority")
     priorities = [t.priority for t in items]
     assert priorities == sorted(priorities, reverse=True)
     assert items[0].name == "sieve"
 
 
 def test_list_sorted_by_difficulty(service: TemplateService) -> None:
-    items = service.list_templates(sort="difficulty")
+    items = service.list_templates()
     difficulties = [t.difficulty for t in items]
-    assert difficulties == sorted(difficulties)
-    # dsu max=6，sieve=7；同分按名称
+    assert difficulties == sorted(difficulties, reverse=True)
+    # dsu max=6，sieve=7；默认难度降序，难的在前
     dsu = next(t for t in items if t.id == "ds/dsu")
     sieve = next(t for t in items if t.id == "math/sieve")
-    assert items.index(dsu) < items.index(sieve)
+    assert items.index(sieve) < items.index(dsu)
     assert dsu.difficulty == 6
     assert sieve.difficulty == 7
 
