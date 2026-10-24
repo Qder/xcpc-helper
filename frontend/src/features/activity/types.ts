@@ -139,4 +139,6 @@ export interface RecommendItem {
 
 export interface RecommendData {
   items: RecommendItem[]
+  /** true = 本次用的是过期缓存（刷新失败后的降级） */
+  stale: boolean
 }

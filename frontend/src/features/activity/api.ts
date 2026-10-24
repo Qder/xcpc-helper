@@ -8,6 +8,7 @@ import type {
   OverviewTotals,
   PlatformId,
   PlatformMeta,
+  RecommendData,
   RefineStatus,
   ReviewData,
   ReviewFilter,
@@ -163,8 +164,16 @@ export function fetchReview(opts: {
   return request<ReviewData>(`/activity/review${qs ? `?${qs}` : ''}`)
 }
 
-/* ---------- 精细化同步（REFINE_VERDICT 能力平台） ---------- */
+/** 同类推荐：按题单标签与难度挑未 AC 过的题（平台须具备题目能力） */
+export function fetchReviewRecommend(
+  platform: string,
+  problemKey: string,
+): Promise<RecommendData> {
+  const params = new URLSearchParams({ platform, problemKey })
+  return request<RecommendData>(`/activity/review/recommend?${params.toString()}`)
+}
 
+/* ---------- 精细化同步（REFINE_VERDICT 能力平台） ---------- */
 function refinePath(platform: string, handle: string): string {
   return `/activity/accounts/${encodeURIComponent(platform)}/${encodeURIComponent(handle)}/refine`
 }
