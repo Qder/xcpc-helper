@@ -759,6 +759,27 @@ async def test_list_problem_tags_filters_algorithm_type():
     assert tags[1].group == ""
 
 
+async def test_list_problem_tags_strips_bom_in_names():
+    """洛谷父标签名带 BOM（\\ufeff）：展示前必须清掉，否则界面留不可见前缀。"""
+
+    dictionary = {
+        "tags": [
+            {"id": 1, "name": "\ufeff模拟", "type": 2, "parent": 110},
+            {"id": 110, "name": "\ufeff基础算法", "type": 2, "parent": None},
+        ],
+        "_version": "zh-CN/2026102415",
+    }
+
+    def handler(url, params):
+        return FakeResponse(200, json.dumps(dictionary, ensure_ascii=False))
+
+    adapter = make_adapter(handler)
+    tags = await adapter.list_problem_tags()
+
+    assert [t.name for t in tags] == ["模拟", "基础算法"]
+    assert tags[0].group == "基础算法"
+
+
 async def test_search_problems_maps_page():
     """按标签浏览：走 /problem/list，pid 为空的行跳过。"""
 

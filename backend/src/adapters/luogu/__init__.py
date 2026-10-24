@@ -86,6 +86,12 @@ RATE_LIMIT_BACKOFF = 30.0  # 专项重试起步退避（秒）
 _RATE_LIMIT_HINT = "请求频繁"
 
 
+def _clean_label(text: str) -> str:
+    """标签文案清理：洛谷 JSON 里的名称可能带 BOM（`\\ufeff基础算法`），
+    strip() 不会去掉它，直接展示会在界面上留一个不可见前缀。"""
+    return (text or "").lstrip("\ufeff").strip()
+
+
 class LuoguAdapter(PlatformAdapter):
     platform_id = "luogu"
     name = "洛谷"
@@ -334,8 +340,10 @@ class LuoguAdapter(PlatformAdapter):
             out.append(
                 TagMeta(
                     id=str(t.id),
-                    name=t.name or str(t.id),
-                    group=parent.name if parent else "",
+                    name=_clean_label(t.name or str(t.id)),
+                    # 洛谷父标签名带 BOM（\ufeff基础算法），JSON 解码后仍在；
+                    # 不清理会让界面分组名显示成不可见前缀（strip 不吃 BOM）
+                    group=_clean_label(parent.name) if parent is not None else "",
                 )
             )
         return out
