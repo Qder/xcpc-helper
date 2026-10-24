@@ -1,10 +1,12 @@
 """UserStore 读写层测试：profile 往返、原子写、去重合并、损坏容错、名称校验、用户组目录管理。"""
 
+import json
+
 import pytest
 
 from adapters.base import Credentials
 from core.exceptions import BadRequestError, ConflictError, NotFoundError
-from modules.activity.models import Account, Submission, Verdict
+from modules.activity.models import Account, Submission, TodoItem, Verdict
 from modules.activity.store import (
     EXAMPLE_GROUP,
     UserStore,
@@ -273,3 +275,101 @@ def test_update_verdicts_noop_and_missing(tmp_path):
     assert store.update_verdicts("luogu", "100", {}) == 0
     assert store.update_verdicts("luogu", "100", {"ghost": Verdict.WA}) == 0
     assert store.update_verdicts("luogu", "100", {"1": Verdict.UNAC}) == 0
+
+
+# ===== 待办清单（review-todo.json） =====
+
+
+def todo(platform: str = "codeforces", key: str = "2245F", added_at: int = 1000) -> TodoItem:
+    return TodoItem(
+        platform=platform,
+        problem_key=key,
+        problem_name="Xor Minimization",
+        problem_url="https://codeforces.com/contest/2245/problem/F",
+        difficulty=2100,
+        tags=["dp", "bitmasks"],
+        added_at=added_at,
+    )
+
+
+def test_todo_roundtrip_and_remove(tmp_path):
+    """待办写入/读取往返；删除后不再返回，重复删除返回 False。"""
+    store = make_store(tmp_path)
+    assert store.load_todo() == []
+
+    saved, created = store.add_todo(todo())
+    assert created is True
+    assert saved.problem_key == "2245F"
+
+    loaded = store.load_todo()
+    assert len(loaded) == 1
+    assert loaded[0].tags == ["dp", "bitmasks"]
+
+    assert store.remove_todo("codeforces", "2245F") is True
+    assert store.load_todo() == []
+    assert store.remove_todo("codeforces", "2245F") is False
+
+
+def test_todo_add_is_idempotent_and_keeps_added_at(tmp_path):
+    """重复加入同一题：不产生第二条、addedAt 保留首次、画像字段刷新。"""
+    store = make_store(tmp_path)
+    store.add_todo(todo(added_at=1000))
+    updated = todo(added_at=2000)
+    updated.problem_name = "New Name"
+    saved, created = store.add_todo(updated)
+
+    assert created is False
+    assert saved.added_at == 1000  # 不把题顶到列表最前
+    assert saved.problem_name == "New Name"
+    assert len(store.load_todo()) == 1
+
+
+def test_todo_add_keeps_old_tags_when_new_snapshot_empty(tmp_path):
+    """离线加入（tags=[]）不该把已有花片清空：空快照保留旧标签。"""
+    store = make_store(tmp_path)
+    store.add_todo(todo())
+    empty = todo()
+    empty.tags = []
+    saved, _ = store.add_todo(empty)
+    assert saved.tags == ["dp", "bitmasks"]
+
+
+def test_todo_corrupt_file_falls_back_to_empty(tmp_path):
+    """review-todo.json 损坏按空清单处理（不阻断待办页）。"""
+    store = make_store(tmp_path)
+    path = tmp_path / "user" / "default" / "activity" / "review-todo.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("not json", encoding="utf-8")
+    assert store.load_todo() == []
+
+
+def test_todo_skips_broken_entry(tmp_path):
+    """单条损坏只跳过该条，其余条目照常返回。"""
+    store = make_store(tmp_path)
+    path = tmp_path / "user" / "default" / "activity" / "review-todo.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                    "items": [
+                        {
+                            "platform": "codeforces",
+                            "problem_key": "2245F",
+                            "added_at": 1000,
+                        },
+                        {"platform": "codeforces"},  # 缺 problem_key / added_at
+                    ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    items = store.load_todo()
+    assert [it.problem_key for it in items] == ["2245F"]
+
+
+def test_todo_isolated_between_groups(tmp_path):
+    """待办随用户组目录隔离：另一组看不到。"""
+    root = tmp_path / "user"
+    UserStore(root, "a").add_todo(todo())
+    assert UserStore(root, "b").load_todo() == []
+

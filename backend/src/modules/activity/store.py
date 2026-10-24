@@ -30,12 +30,15 @@ from modules.activity.models import (
     Profile,
     Secrets,
     Submission,
+    Todo,
+    TodoItem,
 )
 
 PROFILE_FILE = "profile.json"
 SECRETS_FILE = "secrets.json"  # 凭据（gitignore，仅存本机）
 SUBMISSIONS_DIR = Path("activity") / "submissions"
 MANUAL_REVIEW_FILE = Path("activity") / "review-manual.json"  # 手动收录清单
+TODO_FILE = Path("activity") / "review-todo.json"  # 待办清单（精选，用户手动挑）
 
 # 格式样例目录（入 git 的 example 样例，不作为用户组参与管理）
 EXAMPLE_GROUP = "example"
@@ -390,4 +393,84 @@ class UserStore:
             if len(kept) == len(items):
                 return False
             self.save_manual_review(kept)
+            return True
+
+    # ===== 待办清单（review-todo.json） =====
+
+    def load_todo(self) -> list[TodoItem]:
+        """读取待办清单；文件缺失/损坏返回空清单（不阻断待办页）。
+
+        单条损坏只跳过该条——手改坏一行不该让整份待办消失。
+        """
+        path = self._dir / TODO_FILE
+        if not path.is_file():
+            return []
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return []
+        items: list[TodoItem] = []
+        for entry in raw.get("items") or []:
+            try:
+                items.append(TodoItem.model_validate(entry))
+            except ValidationError:
+                continue
+        return items
+
+    def save_todo(self, items: list[TodoItem]) -> None:
+        """整体原子重写待办清单（调用方持锁）。"""
+        text = json.dumps(
+            Todo(items=items).model_dump(mode="json"),
+            ensure_ascii=False,
+            indent=2,
+        )
+        path = self._dir / TODO_FILE
+        path.parent.mkdir(parents=True, exist_ok=True)
+        _atomic_write(path, text)
+
+    def add_todo(self, item: TodoItem) -> tuple[TodoItem, bool]:
+        """加入待办，返回 (落盘的条目, 是否新建)。
+
+        同一 (platform, problem_key) 幂等：已存在时只刷新画像字段（题名/外链/
+        难度/标签），**保留首次 added_at**——重复点击不该把题顶到列表最前。
+        """
+        with self._lock:
+            items = self.load_todo()
+            for i, existing in enumerate(items):
+                if (
+                    existing.platform == item.platform
+                    and existing.problem_key == item.problem_key
+                ):
+                    items[i] = existing.model_copy(
+                        update={
+                            "problem_name": item.problem_name or existing.problem_name,
+                            "problem_url": item.problem_url or existing.problem_url,
+                            "difficulty": (
+                                item.difficulty
+                                if item.difficulty is not None
+                                else existing.difficulty
+                            ),
+                            # 标签是快照：本次查到了就更新，查不到保留旧的
+                            # （离线加入不该把已有花片清空）
+                            "tags": item.tags or existing.tags,
+                        }
+                    )
+                    self.save_todo(items)
+                    return items[i], False
+            items.append(item)
+            self.save_todo(items)
+            return item, True
+
+    def remove_todo(self, platform: str, problem_key: str) -> bool:
+        """删除一条待办；返回是否删到（False 由调用方转 404）。"""
+        with self._lock:
+            items = self.load_todo()
+            kept = [
+                it
+                for it in items
+                if not (it.platform == platform and it.problem_key == problem_key)
+            ]
+            if len(kept) == len(items):
+                return False
+            self.save_todo(kept)
             return True

@@ -29,6 +29,9 @@ from modules.activity.schemas import (
     SearchProblemsOut,
     SubmissionsOut,
     SyncIn,
+    TodoAddOut,
+    TodoIn,
+    TodoOut,
     UpdateCredentialsIn,
     VerifyIn,
     VerifyOut,
@@ -241,6 +244,35 @@ async def get_review_search(
 ) -> SearchProblemsOut:
     """按算法标签浏览题库一页，并标注已通过 / 已收录。"""
     return await service.review_search(platform, tag, page)
+
+
+# ===== 待办题目（todo，设计见 activity/todo.md） =====
+
+
+@router.get("/todo", response_model=TodoOut)
+async def get_todo(
+    service: ServiceDep,
+    platform: Annotated[str | None, Query()] = None,
+    tag: Annotated[str | None, Query()] = None,
+) -> TodoOut:
+    """待办列表（已 AC 隐藏）+ 标签花片；纯本地读取，不触发同步。"""
+    return service.todo_list(platform, tag)
+
+
+@router.post("/todo", response_model=TodoAddOut)
+async def post_todo(payload: TodoIn, service: ServiceDep) -> TodoAddOut:
+    """加入待办：已 AC → 400；重复加入幂等（created=false）。"""
+    return await service.add_todo(payload)
+
+
+@router.delete("/todo", status_code=204)
+async def delete_todo(
+    service: ServiceDep,
+    platform: Annotated[str, Query()],
+    problemKey: Annotated[str, Query()],
+) -> None:
+    """移出待办（不存在 404；不影响错题本与收录清单）。"""
+    service.remove_todo(platform, problemKey)
 
 
 @router.post("/sync", status_code=202)

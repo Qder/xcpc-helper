@@ -193,7 +193,7 @@ backend/data/user/<组>/activity/review-todo.json
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | `GET` | `/api/activity/todo?platform=&tag=` | 待办列表（已 AC 隐藏）+ 标签花片 `[{name, count}]`；`platform` 缺省为全部；`tag` 精确匹配 |
-| `POST` | `/api/activity/todo` | body `{platform, problemKey}`；加入时取一次画像快照；已 AC → 400；幂等（同键不新建，`created=false`） |
+| `POST` | `/api/activity/todo` | body `{platform, problemKey}`；加入时取一次画像快照；已 AC → 400；幂等（同键不新建，返回 `{item, created}`，`created=false` 表示已存在） |
 | `DELETE` | `/api/activity/todo?platform=&problemKey=` | 只删待办；不存在 404 |
 | `GET` | `/api/activity/review` | 每条新增 `inTodo`（本地读待办键集，零网络） |
 

@@ -105,6 +105,29 @@ class ManualReview(BaseModel):
     items: list[ManualReviewItem] = Field(default_factory=list)
 
 
+class TodoItem(BaseModel):
+    """待办题目（review-todo.json 一项）。
+
+    与 ManualReviewItem 结构相近但**多存 tags**：待办页的标签花片必须即时，
+    每次列表现查标签要为每条题发一次请求，不可接受。标签是「加入时的快照」，
+    与平台当前标签可能不一致，展示以快照为准（见 activity/todo.md §3.1）。
+    """
+
+    platform: str
+    problem_key: str
+    problem_name: str = ""
+    problem_url: str = ""
+    difficulty: int | str | None = None  # 平台原始口径（CF 分值 / 洛谷 0-7 档）
+    tags: list[str] = Field(default_factory=list)  # 加入时的标签快照（可为空）
+    added_at: int  # UTC 秒（与 submitted_at 同口径）
+
+
+class Todo(BaseModel):
+    """待办清单文件结构（review-todo.json）。"""
+
+    items: list[TodoItem] = Field(default_factory=list)
+
+
 class SyncState(str, Enum):
     """账号同步状态（运行时内存态，不入库）。"""
 

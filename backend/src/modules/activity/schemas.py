@@ -124,6 +124,7 @@ class ReviewItemOut(BaseModel):
     lastAttemptAt: datetime  # 最近一次尝试（本地时区；收录为加入时间）
     canRecommend: bool  # 该平台是否具备题单能力（决定展开箭头是否出现）
     manual: bool = False  # 手动收录（前端据此提供删除按钮）
+    inTodo: bool = False  # 已在待办清单里（前端据此把「待办」按钮置为「已待办」）
 
 
 class ReviewOut(BaseModel):
@@ -208,6 +209,49 @@ class SearchProblemsOut(BaseModel):
     items: list[SearchProblemOut]
     page: int
     hasMore: bool  # 是否还有下一页（按「本页是否满」判断，不依赖平台总数）
+
+
+# ===== 待办题目（todo，设计见 activity/todo.md） =====
+
+
+class TodoIn(BaseModel):
+    """加入待办的请求体：只收定位字段，画像（题名/难度/标签）由后端补。"""
+
+    platform: str
+    problemKey: str
+
+
+class TodoItemOut(BaseModel):
+    """待办条目（已 AC 的条目不会出现在列表里）。"""
+
+    platform: str
+    problemKey: str
+    problemName: str
+    problemUrl: str
+    difficulty: int | str | None = None  # 平台原始难度值，不跨平台归一
+    tags: list[str]  # 加入时的标签快照（空 = 该平台无标签能力或查询失败）
+    addedAt: datetime  # 加入时间（本地时区）
+    status: ReviewStatusOut  # 加入时来源：未通过 / 收录（挣扎题已 AC，不会进待办）
+
+
+class TodoTagOut(BaseModel):
+    """标签花片：当前平台筛选下、仍未 AC 的待办里该标签出现的次数。"""
+
+    name: str
+    count: int
+
+
+class TodoOut(BaseModel):
+    items: list[TodoItemOut]
+    tags: list[TodoTagOut]  # 花片（不受 tag 参数影响，否则无法切换标签）
+
+
+class TodoAddOut(BaseModel):
+    """加入结果：created=false 表示幂等命中已有条目（不是错误）。"""
+
+    item: TodoItemOut
+    created: bool
+
 
 
 # ===== 浏览器一键登录（cookie 平台） =====

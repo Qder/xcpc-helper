@@ -43,6 +43,7 @@ from modules.activity.models import (
     Account,
     ManualReviewItem,
     Submission,
+    TodoItem,
 )
 from modules.activity.refine import RefineEngine
 from modules.activity.schemas import (
@@ -70,10 +71,16 @@ from modules.activity.schemas import (
     RefineStatusOut,
     ReviewItemOut,
     ReviewOut,
+    ReviewStatusOut,
     SearchProblemOut,
     SearchProblemsOut,
     SubmissionOut,
     SubmissionsOut,
+    TodoAddOut,
+    TodoIn,
+    TodoItemOut,
+    TodoOut,
+    TodoTagOut,
     VerifyIn,
     VerifyOut,
 )
@@ -547,6 +554,8 @@ class ActivityService:
         merged = review.merge_review(records, manual, solved)
         if status != "all":
             merged = [r for r in merged if r.status == status]
+        # 待办键集（本地文件读取，零网络）：前端据 inTodo 把按钮置为「已待办」
+        todo_keys = {(it.platform, it.problem_key) for it in store.load_todo()}
 
         tz = datetime.now().astimezone().tzinfo
         capable = {
@@ -568,6 +577,7 @@ class ActivityService:
                     lastAttemptAt=datetime.fromtimestamp(r.last_attempt_at, tz=tz),
                     canRecommend=r.platform in capable,
                     manual=r.manual,
+                    inTodo=(r.platform, r.problem_key) in todo_keys,
                 )
                 for r in merged
             ],
@@ -680,6 +690,10 @@ class ActivityService:
             Capability.PROBLEMSET in adapter.capabilities
             or Capability.PROBLEM_LOOKUP in adapter.capabilities
         )
+        in_todo = any(
+            it.platform == item.platform and it.problem_key == item.problem_key
+            for it in self._store().load_todo()
+        )
         return ReviewItemOut(
             platform=item.platform,
             problemKey=item.problem_key,
@@ -691,6 +705,7 @@ class ActivityService:
             lastAttemptAt=datetime.fromtimestamp(item.added_at, tz=tz),
             canRecommend=can_recommend,
             manual=True,
+            inTodo=in_todo,
         )
 
     def remove_manual_review(self, platform: str, problem_key: str) -> None:
@@ -698,6 +713,140 @@ class ActivityService:
         self._adapter(platform)
         if not self._store().remove_manual_review(platform, problem_key):
             raise NotFoundError(f"收录条目不存在: {platform}/{problem_key}")
+
+    # ===== 待办题目（todo，设计见 activity/todo.md） =====
+
+    async def add_todo(self, payload: TodoIn) -> TodoAddOut:
+        """把一道题加进待办：已 AC 拒绝，画像查不到也允许加入。
+
+        - 已 AC → 400（前端不给入口，接口仍要挡住直接调用）；
+        - 标签是**加入时的快照**：CF 取题单缓存的 tags，牛客取题库 keyword，
+          洛谷把题目页的 tag_ids 映射成名称；任一环节失败 → tags=[]，
+          题照样能进待办（只是进不了任何花片）；
+        - 同一 (platform, problem_key) 幂等，created=False 表示已存在。
+        """
+        platform = payload.platform.strip()
+        adapter = self._adapter(platform)  # 平台不存在 → 400
+        key = (payload.problemKey or "").strip()
+        if not key:
+            raise BadRequestError("题号不能为空")
+
+        submissions = self._submissions(None)
+        if (platform, key) in review.solved_keys(submissions):
+            raise BadRequestError("该题已 AC，不需要加入待办")
+
+        meta = await self._fetch_problem_quietly(adapter, key)
+        item = TodoItem(
+            platform=platform,
+            problem_key=key,
+            problem_name=(meta.name if meta else "") or key,
+            problem_url=(meta.url if meta else "")
+            or self._fallback_problem_url(platform, key),
+            difficulty=meta.rating if meta else None,
+            tags=await self._todo_tags(adapter, meta),
+            added_at=int(time.time()),
+        )
+        store = self._store()
+        saved, created = store.add_todo(item)
+        return TodoAddOut(
+            item=self._todo_to_out(saved, self._todo_status_map(submissions)),
+            created=created,
+        )
+
+    async def _todo_tags(
+        self, adapter: PlatformAdapter, meta: ProblemMeta | None
+    ) -> list[str]:
+        """取出该题的标签文本快照（查不到就是空：待办不依赖标签成功）。"""
+        if meta is None:
+            return []
+        if meta.tags:
+            return list(meta.tags)
+        if not meta.tag_ids:
+            return []
+        # 洛谷等平台题目页只给标签主键，文本需查平台的标签字典
+        try:
+            catalog = await adapter.list_problem_tags()
+        except (PlatformError, AuthExpiredError) as exc:
+            logger.warning(
+                "标签目录获取失败 [%s]：%s（待办仍可加入，只是无标签）",
+                adapter.platform_id,
+                exc,
+            )
+            return []
+        by_id = {t.id: t.name for t in catalog}
+        names = [by_id[tid] for tid in meta.tag_ids if tid in by_id]
+        return list(dict.fromkeys(names))  # 去重且保持平台顺序
+
+    def todo_list(self, platform: str | None, tag: str | None) -> TodoOut:
+        """待办列表：已 AC 隐藏 + 平台过滤 + 标签精确匹配 + 花片统计。
+
+        纯本地读取（不触发同步、不查平台）；花片只统计**已 AC 过滤 + 平台过滤**
+        之后的集合，不受 tag 参数影响——否则点了一个标签后其余花片会消失，
+        无法再切换。
+        """
+        if platform is not None:
+            self._adapter(platform)
+        submissions = self._submissions(None)
+        solved = review.solved_keys(submissions)
+        status_map = self._todo_status_map(submissions)
+
+        store = self._store()
+        visible = [
+            item
+            for item in store.load_todo()
+            if (item.platform, item.problem_key) not in solved
+            and (platform is None or item.platform == platform)
+        ]
+        counter: Counter[str] = Counter()
+        for item in visible:
+            counter.update(set(item.tags))  # 同题重复标签只算一次
+        tags = [
+            TodoTagOut(name=name, count=count)
+            for name, count in sorted(counter.items(), key=lambda kv: (-kv[1], kv[0]))
+        ]
+
+        if tag:
+            visible = [item for item in visible if tag in item.tags]
+        visible.sort(key=lambda it: (-it.added_at, it.platform, it.problem_key))
+        return TodoOut(
+            items=[self._todo_to_out(item, status_map) for item in visible],
+            tags=tags,
+        )
+
+    def remove_todo(self, platform: str, problem_key: str) -> None:
+        """移出待办；不存在转 404。只碰 review-todo.json，不影响错题本与收录。"""
+        self._adapter(platform)
+        if not self._store().remove_todo(platform, problem_key):
+            raise NotFoundError(f"待办条目不存在: {platform}/{problem_key}")
+
+    @staticmethod
+    def _todo_status_map(
+        submissions: list[Submission],
+    ) -> dict[tuple[str, str], ReviewStatusOut]:
+        """(platform, key) → 来源状态：有提交记录即「未通过」，否则「收录」。
+
+        待办里已 AC 的题都被隐藏了，因此有提交记录必然全是失败提交。
+        """
+        out: dict[tuple[str, str], ReviewStatusOut] = {}
+        for s in submissions:
+            out.setdefault((s.platform, s.problem_key), "unsolved")
+        return out
+
+    @staticmethod
+    def _todo_to_out(
+        item: TodoItem, status_map: dict[tuple[str, str], ReviewStatusOut]
+    ) -> TodoItemOut:
+        tz = datetime.now().astimezone().tzinfo
+        return TodoItemOut(
+            platform=item.platform,
+            problemKey=item.problem_key,
+            problemName=item.problem_name,
+            problemUrl=item.problem_url,
+            difficulty=item.difficulty,
+            tags=list(item.tags),
+            addedAt=datetime.fromtimestamp(item.added_at, tz=tz),
+            status=status_map.get((item.platform, item.problem_key), "collected"),
+        )
 
     async def recommend(self, platform: str, problem_key: str) -> RecommendOut:
         """同类推荐：按共同标签 + 相近难度挑未 AC 过的题。
