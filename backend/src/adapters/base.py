@@ -326,8 +326,17 @@ class PlatformAdapter:
 
         adapter 覆盖此静态方法即可让 service 按注册顺序识别链接，无需在
         service 里维护平台 if-else 表。必须是纯字符串解析（不发请求）。
+        链接里没有题号、需要访问页面才能拿到时，覆盖 resolve_problem_url。
         """
         return None
+
+    async def resolve_problem_url(self, url: str) -> str | None:
+        """题目链接 → problem_key，允许发请求（需要抓页面才能拿到题号的平台）。
+
+        默认退回纯字符串解析。仅具备 PROBLEM_LOOKUP / PROBLEMSET 能力时
+        会被 service 调用（手动收录入口）。
+        """
+        return self.parse_problem_url(url)
 
     async def fetch_submission_verdict(
         self, record_id: str, credentials: Credentials | None = None

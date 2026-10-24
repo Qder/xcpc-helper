@@ -591,7 +591,7 @@ class ActivityService:
             raise BadRequestError("请提供题目链接，或同时提供平台与题号")
 
         if has_url:
-            platform, key = self._parse_manual_url(payload.url or "")
+            platform, key = await self._parse_manual_url(payload.url or "")
         else:
             platform = payload.platform or ""
             self._adapter(platform)  # 平台不存在 → 400
@@ -616,14 +616,25 @@ class ActivityService:
             item=self._manual_to_out(saved), created=created
         )
 
-    def _parse_manual_url(self, url: str) -> tuple[str, str]:
-        """遍历 adapter 的 parse_problem_url，第一个命中的平台胜出。"""
-        for platform, adapter in self._adapters.items():
-            if Capability.PROBLEM_LOOKUP not in adapter.capabilities and (
-                Capability.PROBLEMSET not in adapter.capabilities
-            ):
-                continue
+    async def _parse_manual_url(self, url: str) -> tuple[str, str]:
+        """链接 → (平台, 题号)。
+
+        两轮：先跑所有平台的纯字符串解析（零请求，覆盖绝大多数链接），
+        都没命中再让各平台尝试 resolve_problem_url（目前只有牛客题霸链接
+        需要抓页面换题号）。两轮分开是为了不让常规链接白跑网络请求。
+        """
+        adapters = [
+            (platform, adapter)
+            for platform, adapter in self._adapters.items()
+            if Capability.PROBLEM_LOOKUP in adapter.capabilities
+            or Capability.PROBLEMSET in adapter.capabilities
+        ]
+        for platform, adapter in adapters:
             key = adapter.parse_problem_url(url)
+            if key:
+                return platform, key
+        for platform, adapter in adapters:
+            key = await adapter.resolve_problem_url(url)
             if key:
                 return platform, key
         raise BadRequestError(

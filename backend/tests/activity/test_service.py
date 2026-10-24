@@ -1242,6 +1242,82 @@ async def test_manual_add_rejects_unknown_platform(tmp_path):
         await svc.aclose()
 
 
+async def test_manual_add_nowcoder_practice_url(tmp_path):
+    """牛客题霸链接（/practice/{uuid}，链接里没有题号）→ 抓页面换题号后收录。
+
+    页面内嵌 problemId 是题库题号；再用题库 keyword 查询补题名与难度。
+    这是「粘贴什么链接都能收」的回归点：纯字符串解析对这种链接必然失败。
+    """
+    practice_html = (
+        "<script>window.pageInfo = {\n"
+        "        questionId: '11892363',\n"
+        "        problemId: '325082',\n"
+        "};</script>"
+    )
+    # 题库列表页 HTML：data-problemId 行 + class="title" + tag-label
+    list_html = (
+        "<table><tbody>"
+        '<tr data-problemId="325082">'
+        "<td>NC325082</td>"
+        '<td><a href="/acm/problem/325082" class="title">小月的订单</a>'
+        '<a class="tag-label js-tag" data-id="14439">线性dp</a>'
+        '<a class="tag-label js-tag" data-id="1282">二分</a></td>'
+        "<td>1600</td><td>0</td></tr>"
+        "</tbody></table>"
+    )
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "/practice/" in url:
+            return httpx.Response(200, text=practice_html)
+        if "/acm/problem/list" in url:
+            assert request.url.params["keyword"] == "325082"
+            return httpx.Response(200, text=list_html)
+        return httpx.Response(404)
+
+    svc = make_manual_service(tmp_path, handler)
+    try:
+        out = await svc.add_manual_review(
+            ManualReviewIn(
+                url=(
+                    "https://www.nowcoder.com/practice/"
+                    "23d4c8aa35894cb0bd61df2173c93321?tpId=391&contestId=141877"
+                )
+            )
+        )
+        assert out.created is True
+        assert out.item.platform == "nowcoder"
+        # 用题库题号而不是 uuid 或题霸的 questionId，才能与提交记录对上
+        assert out.item.problemKey == "325082"
+        assert out.item.problemName == "小月的订单"
+        assert out.item.difficulty == 1600
+        assert out.item.problemUrl == "https://ac.nowcoder.com/acm/problem/325082"
+    finally:
+        await svc.aclose()
+
+
+async def test_manual_add_practice_url_falls_back_when_page_unavailable(tmp_path):
+    """题霸页抓不到 → 仍然 400「无法识别」，不能收下一道没有题号的空题。"""
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503)
+
+    svc = make_manual_service(tmp_path, handler)
+    try:
+        with pytest.raises(BadRequestError) as exc:
+            await svc.add_manual_review(
+                ManualReviewIn(
+                    url=(
+                        "https://www.nowcoder.com/practice/"
+                        "23d4c8aa35894cb0bd61df2173c93321"
+                    )
+                )
+            )
+        assert "无法识别" in str(exc.value)
+    finally:
+        await svc.aclose()
+
+
 async def test_manual_add_survives_profile_fetch_failure(tmp_path):
     """平台画像拿不到（离线/反爬）：仍要收下这一题，用题号兜底题名与外链。"""
 

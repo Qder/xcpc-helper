@@ -651,6 +651,77 @@ def test_parse_problem_url():
     assert parse_problem_url("") is None
 
 
+def test_parse_problem_url_rejects_practice_uuid():
+    """题霸链接（/practice/{uuid}）无题号：纯函数不猜，交给 resolve 抓页面。"""
+    from adapters.nowcoder.normalize import is_practice_url, parse_problem_url
+
+    url = (
+        "https://www.nowcoder.com/practice/23d4c8aa35894cb0bd61df2173c93321"
+        "?tpId=391&contestId=141877"
+    )
+    assert parse_problem_url(url) is None
+    assert is_practice_url(url) is True
+    assert is_practice_url("https://www.nowcoder.com/acm/problem/325082") is False
+    assert is_practice_url("https://codeforces.com/practice/abc") is False
+
+
+def test_extract_problem_id_from_page():
+    """题霸页内嵌 window.pageInfo：problemId 是题库题号，questionId 不是。"""
+    from adapters.nowcoder.normalize import extract_problem_id_from_page
+
+    html = (
+        "<script>window.pageInfo = {\n"
+        "        questionID_var: '11892363',\n"
+        "        questionId: '11892363',\n"
+        "        problemId: '325082',\n"
+        "        uuid : '23d4c8aa35894cb0bd61df2173c93321',\n"
+        "};</script>"
+    )
+    assert extract_problem_id_from_page(html) == "325082"
+    assert extract_problem_id_from_page("<html>no info</html>") is None
+    assert extract_problem_id_from_page("") is None
+
+
+async def test_resolve_problem_url_parses_practice_page():
+    """题霸链接：抓一次页面换出题库题号；普通题库链接不发请求。"""
+    fetched: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        fetched.append(str(request.url))
+        if "/practice/23d4c8aa35894cb0bd61df2173c93321" in str(request.url):
+            return httpx.Response(
+                200,
+                text="<script>window.pageInfo = { problemId: '325082' };</script>",
+            )
+        return httpx.Response(404)
+
+    adapter, _ = make_adapter(handler)
+    practice = (
+        "https://www.nowcoder.com/practice/23d4c8aa35894cb0bd61df2173c93321?tpId=391"
+    )
+    assert await adapter.resolve_problem_url(practice) == "325082"
+    assert fetched == [practice]
+
+    # 已有数字题号的链接走纯字符串解析，不产生网络请求
+    fetched.clear()
+    assert (
+        await adapter.resolve_problem_url("https://ac.nowcoder.com/acm/problem/325082")
+        == "325082"
+    )
+    assert fetched == []
+
+
+async def test_resolve_problem_url_returns_none_on_platform_error():
+    """页面抓取失败不能把 500 抛给调用方：返回 None，由收录接口给「无法识别」。"""
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500)
+
+    adapter, _ = make_adapter(handler)
+    url = "https://www.nowcoder.com/practice/23d4c8aa35894cb0bd61df2173c93321"
+    assert await adapter.resolve_problem_url(url) is None
+
+
 # ===== 辅助函数 =====
 
 

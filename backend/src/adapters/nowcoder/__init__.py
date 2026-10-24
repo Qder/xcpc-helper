@@ -31,7 +31,12 @@ from adapters.nowcoder.api_models import (
     NcRatingHistoryEnvelope,
     NcSubmissionRow,
 )
-from adapters.nowcoder.normalize import map_verdict, parse_problem_url
+from adapters.nowcoder.normalize import (
+    extract_problem_id_from_page,
+    is_practice_url,
+    map_verdict,
+    parse_problem_url,
+)
 
 logger = logging.getLogger("xcpc.adapters.nowcoder")
 
@@ -308,6 +313,29 @@ class NowcoderAdapter(PlatformAdapter):
     def parse_problem_url(url: str) -> str | None:
         """题目链接 → problem_key（纯数字题号）；纯字符串解析。"""
         return parse_problem_url(url)
+
+    async def resolve_problem_url(self, url: str) -> str | None:
+        """链接 → 题号；题霸链接（/practice/{uuid}）需抓页面取 problemId。
+
+        纯函数能解析的（/acm/problem/{id}、比赛题）不发请求；只有题霸链接
+        会多一次页面抓取。抓取失败返回 None，由调用方给出「无法识别」提示。
+        """
+        key = parse_problem_url(url)
+        if key is not None:
+            return key
+        if not is_practice_url(url):
+            return None
+        try:
+            resp = await self._fetcher.request(
+                "GET",
+                url,
+                platform=self.platform_id,
+                min_interval=self.min_interval,
+            )
+        except PlatformError as exc:
+            logger.warning("牛客题霸页面抓取失败：%s", exc)
+            return None
+        return extract_problem_id_from_page(resp.text)
 
     # ===== 按算法查找（标签目录 + 按标签搜题） =====
 
