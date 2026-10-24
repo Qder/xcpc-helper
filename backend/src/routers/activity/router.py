@@ -15,6 +15,8 @@ from modules.activity.schemas import (
     GroupOut,
     GroupRenameIn,
     GroupsOut,
+    ManualReviewIn,
+    ManualReviewOut,
     OverviewOut,
     PlatformsOut,
     ProfileOut,
@@ -187,7 +189,7 @@ async def get_review(
     platform: Annotated[str | None, Query()] = None,
     status: Annotated[str, Query()] = "all",
 ) -> ReviewOut:
-    """错题本：未通过 + 挣扎题（纯本地聚合，不触发同步）。"""
+    """错题本：未通过 + 挣扎题 + 收录（纯本地聚合，不触发同步）。"""
     return service.review_list(platform, status)
 
 
@@ -199,6 +201,24 @@ async def get_recommend(
 ) -> RecommendOut:
     """同类推荐：按题单标签与难度挑未 AC 过的题（平台须具备题单能力）。"""
     return await service.recommend(platform, problemKey)
+
+
+@router.post("/review/manual", response_model=ManualReviewOut)
+async def post_manual_review(
+    payload: ManualReviewIn, service: ServiceDep
+) -> ManualReviewOut:
+    """收录一题：{url} 或 {platform, problemKey}；重复收录幂等。"""
+    return await service.add_manual_review(payload)
+
+
+@router.delete("/review/manual", status_code=204)
+async def delete_manual_review(
+    service: ServiceDep,
+    platform: Annotated[str, Query()],
+    problemKey: Annotated[str, Query()],
+) -> None:
+    """删除手动收录项（不存在 404；不影响提交聚合出的记录）。"""
+    service.remove_manual_review(platform, problemKey)
 
 
 @router.post("/sync", status_code=202)

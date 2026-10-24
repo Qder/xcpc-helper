@@ -25,11 +25,12 @@ from core.exceptions import (
     ConflictError,
     NotFoundError,
 )
-from modules.activity.models import Submission
+from modules.activity.models import Account, Submission
 from modules.activity.schemas import (
     BindIn,
     GroupCreateIn,
     GroupRenameIn,
+    ManualReviewIn,
     ProfileUpdateIn,
     VerifyIn,
 )
@@ -1124,5 +1125,266 @@ async def test_nowcoder_recommend_queries_tag_ids_and_rating_window(tmp_path):
         assert seen[1]["tagId"] == "1269,1274"
         assert seen[1]["minDifficulty"] == "1000"
         assert seen[1]["maxDifficulty"] == "1300"
+    finally:
+        await svc.aclose()
+
+
+# ===== 手动收录（链接 / 题号 / 删除） =====
+
+
+def make_manual_service(tmp_path, handler=None) -> ActivityService:
+    """收录测试用服务：数据库目录与缓存目录都指向 tmp，避免污染真实 data/。"""
+    fetcher = HttpFetcher(
+        transport=httpx.MockTransport(handler or (lambda r: httpx.Response(404))),
+        base_backoff=0.01,
+    )
+    svc = ActivityService(
+        Settings(user_data_dir=tmp_path / "user", data_dir=tmp_path / "data"),
+        fetcher,
+    )
+    svc._adapters["nowcoder"].min_interval = 0
+    return svc
+
+
+async def test_manual_add_by_url_uses_platform_parser(tmp_path):
+    """粘贴 CF 链接 → 解析出 2245F 并写入清单（题名/难度来自题单缓存）。"""
+    svc = make_manual_service(tmp_path)
+    try:
+        out = await svc.add_manual_review(
+            ManualReviewIn(url="https://codeforces.com/contest/2245/problem/F")
+        )
+        assert out.created is True
+        assert out.item.platform == "codeforces"
+        assert out.item.problemKey == "2245F"
+        assert out.item.status == "collected"
+        assert out.item.failCount == 0
+        assert out.item.manual is True
+    finally:
+        await svc.aclose()
+
+
+async def test_manual_add_is_idempotent(tmp_path):
+    """重复收录同一题：created=False，不产生第二条，added_at 保留首次。"""
+    svc = make_manual_service(tmp_path)
+    try:
+        first = await svc.add_manual_review(
+            ManualReviewIn(platform="codeforces", problemKey="2245F")
+        )
+        second = await svc.add_manual_review(
+            ManualReviewIn(platform="codeforces", problemKey="2245F")
+        )
+        assert first.created is True
+        assert second.created is False
+        assert second.item.lastAttemptAt == first.item.lastAttemptAt
+
+        stored = svc._store().load_manual_review()
+        assert len(stored) == 1
+    finally:
+        await svc.aclose()
+
+
+async def test_manual_add_rejects_both_or_neither(tmp_path):
+    """url 与 (platform, problemKey) 都给或都不给 → 400（不猜意图）。"""
+    svc = make_manual_service(tmp_path)
+    try:
+        with pytest.raises(BadRequestError):
+            await svc.add_manual_review(ManualReviewIn())
+        with pytest.raises(BadRequestError):
+            await svc.add_manual_review(
+                ManualReviewIn(
+                    url="https://codeforces.com/contest/2245/problem/F",
+                    platform="codeforces",
+                    problemKey="2245F",
+                )
+            )
+    finally:
+        await svc.aclose()
+
+
+async def test_manual_add_rejects_unrecognized_url(tmp_path):
+    """不认识的链接 → 400，并在文案里点明支持哪些平台。"""
+    svc = make_manual_service(tmp_path)
+    try:
+        with pytest.raises(BadRequestError) as exc:
+            await svc.add_manual_review(
+                ManualReviewIn(url="https://example.com/problem/1")
+            )
+        assert "无法识别" in str(exc.value)
+    finally:
+        await svc.aclose()
+
+
+async def test_manual_add_rejects_unknown_platform(tmp_path):
+    """按题号收录时平台不存在 → 400。"""
+    svc = make_manual_service(tmp_path)
+    try:
+        with pytest.raises(BadRequestError):
+            await svc.add_manual_review(
+                ManualReviewIn(platform="nope", problemKey="1")
+            )
+    finally:
+        await svc.aclose()
+
+
+async def test_manual_add_survives_profile_fetch_failure(tmp_path):
+    """平台画像拿不到（离线/反爬）：仍要收下这一题，用题号兜底题名与外链。"""
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503)
+
+    svc = make_manual_service(tmp_path, handler)
+    try:
+        # CF 走题单缓存，缓存拉不到 → 画像降级为 None（不会真去打网络）
+        out = await svc.add_manual_review(
+            ManualReviewIn(url="https://codeforces.com/contest/2245/problem/F")
+        )
+        assert out.created is True
+        assert out.item.problemName == "2245F"
+        assert out.item.problemUrl == (
+            "https://codeforces.com/problemset/problem/2245F"
+        )
+        assert out.item.difficulty is None
+    finally:
+        await svc.aclose()
+
+
+async def test_manual_items_appear_as_collected(tmp_path):
+    """收录项进错题本：status=collected，可按 collected 筛选。"""
+    svc = make_manual_service(tmp_path)
+    try:
+        await svc.add_manual_review(
+            ManualReviewIn(platform="codeforces", problemKey="2245F")
+        )
+        all_items = svc.review_list(None, "all").items
+        assert [i.problemKey for i in all_items] == ["2245F"]
+        assert all_items[0].status == "collected"
+
+        assert [i.problemKey for i in svc.review_list(None, "collected").items] == [
+            "2245F"
+        ]
+        assert svc.review_list(None, "unsolved").items == []
+    finally:
+        await svc.aclose()
+
+
+async def test_manual_item_hidden_when_already_ac(tmp_path):
+    """手动项一旦在提交里 AC，就不再显示为收录（merge_review 的已 AC 分支）。"""
+    svc = make_manual_service(tmp_path)
+    try:
+        store = svc._store()
+        store.save_account(Account(platform="codeforces", handle="demo"))
+        store.merge_submissions(
+            "codeforces",
+            "demo",
+            [
+                Submission(
+                    platform="codeforces",
+                    handle="demo",
+                    submission_id="1",
+                    problem_key="2245F",
+                    problem_name="Xor Minimization",
+                    problem_url="https://codeforces.com/contest/2245/problem/F",
+                    difficulty=2100,
+                    verdict=Verdict.AC,
+                    submitted_at=int(time.time()),
+                    language="GNU C++17",
+                )
+            ],
+        )
+        await svc.add_manual_review(
+            ManualReviewIn(platform="codeforces", problemKey="2245F")
+        )
+
+        assert svc.review_list(None, "all").items == []
+        # 但清单里仍在（不清用户数据，等提交数据被清掉后自然复现）
+        assert len(svc._store().load_manual_review()) == 1
+    finally:
+        await svc.aclose()
+
+
+async def test_manual_item_does_not_duplicate_submission_record(tmp_path):
+    """同一题既有未通过提交又手动收录 → 只保留提交那条（状态以提交为准）。"""
+    svc = make_manual_service(tmp_path)
+    try:
+        store = svc._store()
+        store.save_account(Account(platform="codeforces", handle="demo"))
+        store.merge_submissions(
+            "codeforces",
+            "demo",
+            [
+                Submission(
+                    platform="codeforces",
+                    handle="demo",
+                    submission_id="1",
+                    problem_key="2245F",
+                    problem_name="Xor Minimization",
+                    problem_url="https://codeforces.com/contest/2245/problem/F",
+                    difficulty=2100,
+                    verdict=Verdict.WA,
+                    submitted_at=int(time.time()),
+                    language="GNU C++17",
+                )
+            ],
+        )
+        await svc.add_manual_review(
+            ManualReviewIn(platform="codeforces", problemKey="2245F")
+        )
+
+        items = svc.review_list(None, "all").items
+        assert len(items) == 1
+        assert items[0].status == "unsolved"
+        assert items[0].manual is False
+    finally:
+        await svc.aclose()
+
+
+async def test_manual_remove(tmp_path):
+    """删除收录项；再次删除（或从未存在）→ 404。"""
+    svc = make_manual_service(tmp_path)
+    try:
+        await svc.add_manual_review(
+            ManualReviewIn(platform="codeforces", problemKey="2245F")
+        )
+        svc.remove_manual_review("codeforces", "2245F")
+        assert svc.review_list(None, "all").items == []
+
+        with pytest.raises(NotFoundError):
+            svc.remove_manual_review("codeforces", "2245F")
+    finally:
+        await svc.aclose()
+
+
+async def test_manual_list_platform_filter(tmp_path):
+    """收录项按平台筛选；其他平台的榜单项不混进来。"""
+    svc = make_manual_service(tmp_path)
+    try:
+        await svc.add_manual_review(
+            ManualReviewIn(platform="codeforces", problemKey="2245F")
+        )
+        await svc.add_manual_review(
+            ManualReviewIn(platform="nowcoder", problemKey="274704")
+        )
+        assert [i.problemKey for i in svc.review_list("codeforces", "all").items] == [
+            "2245F"
+        ]
+        assert [i.problemKey for i in svc.review_list("nowcoder", "all").items] == [
+            "274704"
+        ]
+    finally:
+        await svc.aclose()
+
+
+async def test_manual_item_stored_on_disk(tmp_path):
+    """落盘路径固定在 activity/review-manual.json（随用户组删除一起清理）。"""
+    svc = make_manual_service(tmp_path)
+    try:
+        await svc.add_manual_review(
+            ManualReviewIn(platform="codeforces", problemKey="2245F")
+        )
+        path = tmp_path / "user" / "default" / "activity" / "review-manual.json"
+        assert path.is_file()
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        # 落盘字段是 snake_case（models.ManualReviewItem），API 才转 camelCase
+        assert payload["items"][0]["problem_key"] == "2245F"
     finally:
         await svc.aclose()

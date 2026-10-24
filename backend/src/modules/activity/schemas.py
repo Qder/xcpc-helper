@@ -108,11 +108,11 @@ class SyncIn(BaseModel):
 
 # ===== 错题本与同类推荐（review，设计见 activity/review.md） =====
 
-ReviewStatusOut = Literal["unsolved", "struggled"]
+ReviewStatusOut = Literal["unsolved", "struggled", "collected"]
 
 
 class ReviewItemOut(BaseModel):
-    """错题本条目（未通过 / 挣扎题）。"""
+    """错题本条目（未通过 / 挣扎题 / 收录）。"""
 
     platform: str
     problemKey: str
@@ -120,9 +120,10 @@ class ReviewItemOut(BaseModel):
     problemUrl: str
     difficulty: int | str | None = None  # 平台原始难度值，不跨平台归一
     status: ReviewStatusOut
-    failCount: int  # 首次 AC 之前的失败次数（unsolved 为全部失败数）
-    lastAttemptAt: datetime  # 最近一次尝试（本地时区）
+    failCount: int  # 首次 AC 之前的失败次数（unsolved 为全部失败数；收录恒 0）
+    lastAttemptAt: datetime  # 最近一次尝试（本地时区；收录为加入时间）
     canRecommend: bool  # 该平台是否具备题单能力（决定展开箭头是否出现）
+    manual: bool = False  # 手动收录（前端据此提供删除按钮）
 
 
 class ReviewOut(BaseModel):
@@ -151,6 +152,27 @@ class RecommendOut(BaseModel):
     #   not_indexed = 源题不在平台题库/题单里（如牛客比赛专属题），无从推荐；
     #   no_match    = 源题在库内，但没有标签与难度相近的未做题。
     reason: RecommendEmptyReason | None = None
+
+
+# ===== 手动收录与按算法查找 =====
+
+
+class ManualReviewIn(BaseModel):
+    """收录请求：{url} 或 {platform, problemKey} 二选一。
+
+    两者都缺/都给 → 400（不猜用户意图：链接可解析出平台，题号必须带平台）。
+    """
+
+    url: str | None = None
+    platform: str | None = None
+    problemKey: str | None = None
+
+
+class ManualReviewOut(BaseModel):
+    """收录结果：created=false 表示幂等命中已有条目（不是错误）。"""
+
+    item: ReviewItemOut
+    created: bool
 
 
 # ===== 浏览器一键登录（cookie 平台） =====

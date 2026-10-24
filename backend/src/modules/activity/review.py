@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from adapters.base import ProblemMeta, Verdict
-from modules.activity.models import Submission
+from modules.activity.models import ManualReviewItem, Submission
 
 # 挣扎题阈值：首次 AC 之前的失败提交数达到该值即视为"做了很多次才过"
 STRUGGLING_FAILS = 3
@@ -30,7 +30,7 @@ FAIL_VERDICTS: frozenset[Verdict] = frozenset(
     }
 )
 
-ReviewStatus = Literal["unsolved", "struggled"]
+ReviewStatus = Literal["unsolved", "struggled", "collected"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +46,7 @@ class ProblemRecord:
     fail_count: int
     last_attempt_at: int
     first_ac_at: int | None
+    manual: bool = False  # 来自手动收录（前端据此显示删除按钮）
 
 
 def _group_key(s: Submission) -> tuple[str, str]:
@@ -116,6 +117,44 @@ def review_records(submissions: Iterable[Submission]) -> list[ProblemRecord]:
 def solved_keys(submissions: Iterable[Submission]) -> set[tuple[str, str]]:
     """已 AC 的题目集合（推荐候选排除用）。"""
     return {_group_key(s) for s in submissions if s.verdict == Verdict.AC}
+
+
+def merge_review(
+    records: Iterable[ProblemRecord],
+    manual: Iterable[ManualReviewItem],
+    solved: set[tuple[str, str]],
+) -> list[ProblemRecord]:
+    """提交聚合结果 + 手动收录清单 → 错题本列表（三类状态互斥）。
+
+    优先级：unsolved / struggled > collected。
+    - 手动项的题若已有提交聚合记录 → 跳过（提交数据是更强的证据）；
+    - 手动项的题若已 AC → 跳过（collected 的定义就是「还没过」，不需要补）；
+    - 其余转成 status="collected"、fail_count=0、last_attempt_at=added_at。
+
+    solved 为 (platform, problem_key) 集合（跨该用户组全部账号）。
+    """
+    merged = list(records)
+    known = {(r.platform, r.problem_key) for r in merged}
+    for item in manual:
+        key = (item.platform, item.problem_key)
+        if key in known or key in solved:
+            continue
+        merged.append(
+            ProblemRecord(
+                platform=item.platform,
+                problem_key=item.problem_key,
+                problem_name=item.problem_name,
+                problem_url=item.problem_url,
+                difficulty=item.difficulty,
+                status="collected",
+                fail_count=0,
+                last_attempt_at=item.added_at,
+                first_ac_at=None,
+                manual=True,
+            )
+        )
+    merged.sort(key=lambda r: (-r.last_attempt_at, r.platform, r.problem_key))
+    return merged
 
 
 # ===== 同类推荐（打分与过滤，纯函数） =====

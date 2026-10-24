@@ -25,6 +25,8 @@ from core.exceptions import ConflictError, NotFoundError
 from modules.activity.models import (
     DEFAULT_USER_ID,
     Account,
+    ManualReview,
+    ManualReviewItem,
     Profile,
     Secrets,
     Submission,
@@ -33,6 +35,7 @@ from modules.activity.models import (
 PROFILE_FILE = "profile.json"
 SECRETS_FILE = "secrets.json"  # 凭据（gitignore，仅存本机）
 SUBMISSIONS_DIR = Path("activity") / "submissions"
+MANUAL_REVIEW_FILE = Path("activity") / "review-manual.json"  # 手动收录清单
 
 # 格式样例目录（入 git 的 example 样例，不作为用户组参与管理）
 EXAMPLE_GROUP = "example"
@@ -309,3 +312,82 @@ class UserStore:
                     changed = True
             if changed:
                 self._write_submissions(platform, handle, items)
+
+    # ===== 手动收录清单（review-manual.json） =====
+
+    def load_manual_review(self) -> list[ManualReviewItem]:
+        """读取手动收录清单；文件缺失/损坏返回空清单（不阻断错题本）。
+
+        单条损坏只跳过该条：手改坏一行不该让整个清单消失。
+        """
+        path = self._dir / MANUAL_REVIEW_FILE
+        if not path.is_file():
+            return []
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return []
+        items: list[ManualReviewItem] = []
+        for entry in raw.get("items") or []:
+            try:
+                items.append(ManualReviewItem.model_validate(entry))
+            except ValidationError:
+                continue
+        return items
+
+    def save_manual_review(self, items: list[ManualReviewItem]) -> None:
+        """整体原子重写清单（调用方持锁）。"""
+        text = json.dumps(
+            ManualReview(items=items).model_dump(mode="json"),
+            ensure_ascii=False,
+            indent=2,
+        )
+        path = self._dir / MANUAL_REVIEW_FILE
+        path.parent.mkdir(parents=True, exist_ok=True)
+        _atomic_write(path, text)
+
+    def add_manual_review(
+        self, item: ManualReviewItem
+    ) -> tuple[ManualReviewItem, bool]:
+        """加入一条，返回 (落盘的条目, 是否新建)。
+
+        同一 (platform, problem_key) 幂等：已存在时只更新画像字段（题名/外链/
+        难度），**保留首次 added_at**——重复点击不该把题顶到列表最前。
+        """
+        with self._lock:
+            items = self.load_manual_review()
+            for i, existing in enumerate(items):
+                if (
+                    existing.platform == item.platform
+                    and existing.problem_key == item.problem_key
+                ):
+                    items[i] = existing.model_copy(
+                        update={
+                            "problem_name": item.problem_name or existing.problem_name,
+                            "problem_url": item.problem_url or existing.problem_url,
+                            "difficulty": (
+                                item.difficulty
+                                if item.difficulty is not None
+                                else existing.difficulty
+                            ),
+                        }
+                    )
+                    self.save_manual_review(items)
+                    return items[i], False
+            items.append(item)
+            self.save_manual_review(items)
+            return item, True
+
+    def remove_manual_review(self, platform: str, problem_key: str) -> bool:
+        """删除一条；返回是否删到（False 由调用方转 404）。"""
+        with self._lock:
+            items = self.load_manual_review()
+            kept = [
+                it
+                for it in items
+                if not (it.platform == platform and it.problem_key == problem_key)
+            ]
+            if len(kept) == len(items):
+                return False
+            self.save_manual_review(kept)
+            return True

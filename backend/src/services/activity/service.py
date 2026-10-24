@@ -36,7 +36,12 @@ from core.exceptions import (
 )
 from modules.activity import aggregate, problemset, review
 from modules.activity import store as activity_store
-from modules.activity.models import DEFAULT_USER_ID, Account, Submission
+from modules.activity.models import (
+    DEFAULT_USER_ID,
+    Account,
+    ManualReviewItem,
+    Submission,
+)
 from modules.activity.refine import RefineEngine
 from modules.activity.schemas import (
     BindIn,
@@ -47,6 +52,8 @@ from modules.activity.schemas import (
     GroupOut,
     GroupRenameIn,
     GroupsOut,
+    ManualReviewIn,
+    ManualReviewOut,
     OverviewOut,
     OverviewTotalsOut,
     PlatformMetaOut,
@@ -77,6 +84,8 @@ AVATAR_MAX_CHARS = 500_000
 PENDING_CREDENTIALS_TTL = 600.0
 # browser-login 用户登录操作超时（秒）
 BROWSER_LOGIN_TIMEOUT = 180.0
+# 按算法搜题每页条数（与平台题库页 pageSize 对齐，末页按「本页是否满」判定）
+REVIEW_SEARCH_PAGE_SIZE = 50
 
 
 class ActivityService:
@@ -511,21 +520,27 @@ class ActivityService:
     # ===== 错题本与同类推荐（review，设计见 activity/review.md） =====
 
     def review_list(self, platform: str | None, status: str) -> ReviewOut:
-        """错题本：未通过 + 挣扎题（按最近尝试时间倒序）。
+        """错题本：未通过 + 挣扎题 + 手动收录（按最近时间倒序）。
 
-        status 取 all / unsolved / struggled；platform 为 None 表示全部平台。
-        纯本地读取，不触发同步。
+        status 取 all / unsolved / struggled / collected；
+        platform 为 None 表示全部平台。纯本地读取，不触发同步。
         """
         if platform is not None:
             self._adapter(platform)
-        if status not in ("all", "unsolved", "struggled"):
+        if status not in ("all", "unsolved", "struggled", "collected"):
             raise BadRequestError(f"不支持的状态筛选: {status}")
 
         store = self._store()
         profile = store.load_profile()
-        records = review.review_records(self._submissions(platform))
+        all_submissions = self._submissions(platform)
+        records = review.review_records(all_submissions)
+        solved = review.solved_keys(all_submissions)
+        manual = store.load_manual_review()
+        if platform is not None:
+            manual = [m for m in manual if m.platform == platform]
+        merged = review.merge_review(records, manual, solved)
         if status != "all":
-            records = [r for r in records if r.status == status]
+            merged = [r for r in merged if r.status == status]
 
         tz = datetime.now().astimezone().tzinfo
         capable = {
@@ -546,12 +561,126 @@ class ActivityService:
                     failCount=r.fail_count,
                     lastAttemptAt=datetime.fromtimestamp(r.last_attempt_at, tz=tz),
                     canRecommend=r.platform in capable,
+                    manual=r.manual,
                 )
-                for r in records
+                for r in merged
             ],
             bound=bool(profile.accounts),
             synced=any(acc.last_synced_at is not None for acc in profile.accounts),
         )
+
+    # ===== 手动收录（链接 / 题号） =====
+
+    async def add_manual_review(self, payload: ManualReviewIn) -> ManualReviewOut:
+        """收录一题：按链接解析，或按 (platform, problemKey) 直接收录。
+
+        - 链接解析用各 adapter 的纯函数 parse_problem_url（顺注册序，先命中者赢）；
+        - 解析成功后再查一次平台画像补题名/难度；查不到也允许收录（比赛专属题、
+          未公开题、平台暂时不可达都会走到这里），题名退化为链接兜底；
+        - 同一 (platform, problem_key) 幂等，created=False 表示已存在。
+        """
+        has_url = bool(payload.url and payload.url.strip())
+        has_key = bool(payload.platform and payload.problemKey)
+        if has_url == has_key:
+            raise BadRequestError("请提供题目链接，或同时提供平台与题号")
+
+        if has_url:
+            platform, key = self._parse_manual_url(payload.url or "")
+        else:
+            platform = payload.platform or ""
+            self._adapter(platform)  # 平台不存在 → 400
+            key = (payload.problemKey or "").strip()
+            if not key:
+                raise BadRequestError("题号不能为空")
+
+        adapter = self._adapter(platform)
+        meta = await self._fetch_problem_quietly(adapter, key)
+        store = self._store()
+        item = ManualReviewItem(
+            platform=platform,
+            problem_key=key,
+            problem_name=(meta.name if meta else "") or key,
+            problem_url=(meta.url if meta else "")
+            or self._fallback_problem_url(platform, key),
+            difficulty=meta.rating if meta else None,
+            added_at=int(time.time()),
+        )
+        saved, created = store.add_manual_review(item)
+        return ManualReviewOut(
+            item=self._manual_to_out(saved), created=created
+        )
+
+    def _parse_manual_url(self, url: str) -> tuple[str, str]:
+        """遍历 adapter 的 parse_problem_url，第一个命中的平台胜出。"""
+        for platform, adapter in self._adapters.items():
+            if Capability.PROBLEM_LOOKUP not in adapter.capabilities and (
+                Capability.PROBLEMSET not in adapter.capabilities
+            ):
+                continue
+            key = adapter.parse_problem_url(url)
+            if key:
+                return platform, key
+        raise BadRequestError(
+            "无法识别该链接，支持 Codeforces / 牛客竞赛 / 洛谷的题目页"
+        )
+
+    async def _fetch_problem_quietly(
+        self, adapter: PlatformAdapter, problem_key: str
+    ) -> ProblemMeta | None:
+        """取题目画像；任何平台故障都降级为 None（收录不依赖画像成功）。"""
+        try:
+            if Capability.PROBLEM_LOOKUP in adapter.capabilities:
+                return await adapter.fetch_problem(problem_key)
+            if Capability.PROBLEMSET in adapter.capabilities:
+                cached = await self._problemset(adapter.platform_id)
+                if cached is None:
+                    return None
+                return next(
+                    (p for p in cached.items if p.problem_key == problem_key), None
+                )
+        except (PlatformError, AuthExpiredError) as exc:
+            logger.warning(
+                "题目画像获取失败 [%s/%s]：%s", adapter.platform_id, problem_key, exc
+            )
+        return None
+
+    @staticmethod
+    def _fallback_problem_url(platform: str, problem_key: str) -> str:
+        """画像查不到时的外链兜底（按平台 URL 规则拼题号）。"""
+        if platform == "codeforces":
+            return f"https://codeforces.com/problemset/problem/{problem_key}"
+        if platform == "nowcoder":
+            return f"https://ac.nowcoder.com/acm/problem/{problem_key}"
+        if platform == "luogu":
+            return f"https://www.luogu.com.cn/problem/{problem_key}"
+        return ""
+
+    def _manual_to_out(self, item: ManualReviewItem) -> ReviewItemOut:
+        """收纳条目 → API 输出（收录恒为 collected / failCount=0）。"""
+        tz = datetime.now().astimezone().tzinfo
+        adapter = self._adapters.get(item.platform)
+        can_recommend = adapter is not None and (
+            Capability.PROBLEMSET in adapter.capabilities
+            or Capability.PROBLEM_LOOKUP in adapter.capabilities
+        )
+        return ReviewItemOut(
+            platform=item.platform,
+            problemKey=item.problem_key,
+            problemName=item.problem_name,
+            problemUrl=item.problem_url,
+            difficulty=item.difficulty,
+            status="collected",
+            failCount=0,
+            lastAttemptAt=datetime.fromtimestamp(item.added_at, tz=tz),
+            canRecommend=can_recommend,
+            manual=True,
+        )
+
+    def remove_manual_review(self, platform: str, problem_key: str) -> None:
+        """删除手动收录项；不存在转 404（不静默成功，便于前端发现状态漂移）。"""
+        self._adapter(platform)
+        if not self._store().remove_manual_review(platform, problem_key):
+            raise NotFoundError(f"收录条目不存在: {platform}/{problem_key}")
 
     async def recommend(self, platform: str, problem_key: str) -> RecommendOut:
         """同类推荐：按共同标签 + 相近难度挑未 AC 过的题。

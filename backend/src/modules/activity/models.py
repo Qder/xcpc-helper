@@ -83,6 +83,28 @@ class Profile(BaseModel):
     accounts: list[Account] = Field(default_factory=list)
 
 
+class ManualReviewItem(BaseModel):
+    """手动收录的错题（review-manual.json 一项）。
+
+    只存「定位该题所需的最小字段」+ 收录时的画像快照：平台不可达时列表
+    仍要能显示这一行；推荐展开时以平台实时画像为准（见 activity/review.md）。
+    不存标签：平台标签会变，且存下来就有两套事实来源。
+    """
+
+    platform: str
+    problem_key: str  # 与 Submission.problem_key 同口径（合并去重的依据）
+    problem_name: str = ""
+    problem_url: str = ""
+    difficulty: int | str | None = None  # 平台原始口径（CF 分值 / 洛谷 0-7 档）
+    added_at: int  # UTC 秒（与 submitted_at 同口径，可直接比较排序）
+
+
+class ManualReview(BaseModel):
+    """手动收录清单文件结构（review-manual.json）。"""
+
+    items: list[ManualReviewItem] = Field(default_factory=list)
+
+
 class SyncState(str, Enum):
     """账号同步状态（运行时内存态，不入库）。"""
 

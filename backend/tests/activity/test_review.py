@@ -136,3 +136,90 @@ def test_solved_keys_includes_each_platform():
         sub("3", "WA", key="B"),
     ]
     assert solved_keys(items) == {("codeforces", "A"), ("atcoder", "A")}
+
+
+# ===== 手动收录合并（merge_review） =====
+
+
+def manual(
+    key: str,
+    *,
+    platform: str = "codeforces",
+    added_at: int = BASE_TS + 100,
+    name: str = "Manual",
+    difficulty: int | None = 1500,
+):
+    from modules.activity.models import ManualReviewItem
+
+    return ManualReviewItem(
+        platform=platform,
+        problem_key=key,
+        problem_name=name,
+        problem_url=f"https://codeforces.com/contest/1/problem/{key}",
+        difficulty=difficulty,
+        added_at=added_at,
+    )
+
+
+def test_merge_adds_collected_items():
+    """没有提交的收录项转成 collected：failCount=0、manual=True。"""
+    from modules.activity.review import merge_review
+
+    merged = merge_review([], [manual("P1001")], set())
+    assert len(merged) == 1
+    r = merged[0]
+    assert r.status == "collected"
+    assert r.fail_count == 0
+    assert r.last_attempt_at == BASE_TS + 100
+    assert r.first_ac_at is None
+    assert r.manual is True
+
+
+def test_merge_submission_takes_priority():
+    """同一题既有提交聚合又有收录项 → 只保留提交那条（不重复出现）。"""
+    from modules.activity.review import merge_review
+
+    records = review_records([sub("1", "WA", key="2245A")])
+    merged = merge_review(records, [manual("2245A")], set())
+    assert len(merged) == 1
+    assert merged[0].status == "unsolved"
+    assert merged[0].manual is False
+
+
+def test_merge_skips_solved_problems():
+    """已在提交里 AC 的题不再显示为收录（collected 的定义就是还没过）。"""
+    from modules.activity.review import merge_review
+
+    merged = merge_review([], [manual("2245A")], {("codeforces", "2245A")})
+    assert merged == []
+
+
+def test_merge_sorts_by_time_desc_across_both_sources():
+    """收录项与提交聚合项统一按最近时间倒序（收录时间与提交时间同口径）。"""
+    from modules.activity.review import merge_review
+
+    records = review_records([sub("1", "WA", key="OLD", ts=BASE_TS)])
+    merged = merge_review(
+        records,
+        [manual("NEW", added_at=BASE_TS + 500), manual("MID", added_at=BASE_TS + 50)],
+        set(),
+    )
+    assert [r.problem_key for r in merged] == ["NEW", "MID", "OLD"]
+
+
+def test_merge_respects_platform_scope():
+    """合并按 (platform, problem_key) 判重：同题号在不同平台各自独立。
+
+    CF 的 A 已 AC（不进错题本），洛谷的 A 只是提交里 WA 过的一题 + 一条
+    收录项；两者互不影响。
+    """
+    from modules.activity.review import merge_review
+
+    records = review_records([sub("1", "WA", key="A")])
+    merged = merge_review(
+        records, [manual("A", platform="luogu")], {("codeforces", "A")}
+    )
+    by_platform = {r.platform: r for r in merged}
+    assert set(by_platform) == {"codeforces", "luogu"}
+    assert by_platform["codeforces"].status == "unsolved"
+    assert by_platform["luogu"].status == "collected"
